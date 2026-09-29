@@ -51,7 +51,10 @@ class PointsBot(commands.Bot):
         )
 
     async def setup_hook(self) -> None:
-        await asyncio.to_thread(self.store.initialize)
+        await asyncio.to_thread(
+            self.store.initialize,
+            voice_rewards_enabled=VOICE_REWARDS_ENABLED,
+        )
         extensions = EXTENSIONS
         if VOICE_REWARDS_ENABLED:
             extensions += ("cogs.voice_rewards",)

@@ -209,30 +209,37 @@ class EconomyStore:
             (guild_id,),
         )
 
-    def initialize(self) -> None:
+    def initialize(self, *, voice_rewards_enabled: bool = True) -> None:
         with self._connect() as connection:
             if self.is_postgres:
                 if self.guild_ids:
+                    tables = tuple(
+                        table
+                        for table in _StoreConnection._TABLES
+                        if voice_rewards_enabled or table != "voice_activity"
+                    )
                     for guild_id in self.guild_ids:
-                        names = tuple(
-                            f"{table}_{guild_id}"
-                            for table in _StoreConnection._TABLES
-                        )
-                        found = connection.execute(
-                            "SELECT " + ", ".join(
-                                f"to_regclass('public.{name}') AS t{index}"
-                                for index, name in enumerate(names)
-                            ) + ", EXISTS (SELECT 1 FROM information_schema.columns "
-                                f"WHERE table_schema = 'public' AND table_name = "
+                        names = tuple(f"{table}_{guild_id}" for table in tables)
+                        status_columns = [
+                            f"to_regclass('public.{name}') AS t{index}"
+                            for index, name in enumerate(names)
+                        ]
+                        if voice_rewards_enabled:
+                            status_columns.append(
+                                "EXISTS (SELECT 1 FROM information_schema.columns "
+                                "WHERE table_schema = 'public' AND table_name = "
                                 f"'voice_activity_{guild_id}' AND column_name = "
                                 "'accrued_units') AS voice_units"
+                            )
+                        found = connection.execute(
+                            "SELECT " + ", ".join(status_columns)
                         ).fetchone()
                         missing = [
                             name
                             for index, name in enumerate(names)
                             if found[f"t{index}"] is None
                         ]
-                        if not found["voice_units"]:
+                        if voice_rewards_enabled and not found["voice_units"]:
                             missing.append(
                                 f"voice_activity_{guild_id}.accrued_units"
                             )
@@ -275,13 +282,13 @@ class EconomyStore:
                         "supabase/migrations의 create_shared_accounts SQL을 "
                         "Supabase SQL Editor에서 적용해 주세요."
                     )
-                if row["voice_activity"] is None:
+                if voice_rewards_enabled and row["voice_activity"] is None:
                     raise RuntimeError(
                         "Supabase 보이스 활동 테이블이 없습니다. "
                         "supabase/migrations/20260927120000_create_voice_activity.sql "
                         "파일을 Supabase SQL Editor에서 적용해 주세요."
                     )
-                if not row["voice_units"]:
+                if voice_rewards_enabled and not row["voice_units"]:
                     raise RuntimeError(
                         "Supabase 보이스 활동 테이블을 최신 구조로 바꾸려면 "
                         "supabase/migrations/20260927120000_create_voice_activity.sql "
@@ -328,9 +335,10 @@ class EconomyStore:
                             balance INTEGER NOT NULL DEFAULT 0 CHECK (balance >= 0)
                         )"""
                     )
-                    self._initialize_voice_activity_table(
-                        connection, f"voice_activity_{guild_id}"
-                    )
+                    if voice_rewards_enabled:
+                        self._initialize_voice_activity_table(
+                            connection, f"voice_activity_{guild_id}"
+                        )
                 return
 
             connection.execute(
@@ -348,7 +356,8 @@ class EconomyStore:
                     balance INTEGER NOT NULL DEFAULT 0 CHECK (balance >= 0)
                 )"""
             )
-            self._initialize_voice_activity_table(connection, "voice_activity")
+            if voice_rewards_enabled:
+                self._initialize_voice_activity_table(connection, "voice_activity")
             connection.execute(
                 """CREATE TABLE IF NOT EXISTS shop_items (
                     guild_id INTEGER NOT NULL,
