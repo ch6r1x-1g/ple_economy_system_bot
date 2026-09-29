@@ -64,16 +64,18 @@ class Sell(commands.Cog):
         role_message = ""
         if role_id is not None:
             role_to_remove = interaction.guild.get_role(role_id)
+            bot_member = interaction.guild.me
             if role_to_remove is None:
                 role_message = (
                     "\n연결된 역할을 찾을 수 없어 역할을 회수하지 못했습니다."
                 )
-            elif (
-                not role_to_remove.is_assignable()
-                or not interaction.app_permissions.manage_roles
-            ):
+            elif bot_member is None or not bot_member.guild_permissions.manage_roles:
                 role_message = (
-                    "\n역할 회수에 실패했습니다. 봇의 역할 순서를 확인해 주세요."
+                    "\n역할 회수에 실패했습니다. 봇에 `역할 관리` 권한이 필요합니다."
+                )
+            elif not role_to_remove.is_assignable():
+                role_message = (
+                    "\n역할 회수에 실패했습니다. 봇의 가장 높은 역할 순서를 확인해 주세요."
                 )
             else:
                 try:

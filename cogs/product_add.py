@@ -67,17 +67,27 @@ class ProductAdd(commands.Cog):
                 ephemeral=True,
             )
             return
-        if role is not None and (
-            not role.is_assignable() or not interaction.app_permissions.manage_roles
-        ):
-            await send_card(
-                interaction,
-                "역할을 지급할 수 없습니다",
-                "봇이 관리할 수 있고 역할 관리 권한으로 지급할 수 있는 역할을 선택해 주세요.",
-                color=discord.Color.red(),
-                ephemeral=True,
-            )
-            return
+        if role is not None:
+            bot_member = interaction.guild.me
+            if bot_member is None or not bot_member.guild_permissions.manage_roles:
+                await send_card(
+                    interaction,
+                    "봇에 역할 관리 권한이 없습니다",
+                    "서버 설정에서 봇 역할에 `역할 관리` 권한을 부여해 주세요.",
+                    color=discord.Color.red(),
+                    ephemeral=True,
+                )
+                return
+            if not role.is_assignable():
+                await send_card(
+                    interaction,
+                    "역할을 지급할 수 없습니다",
+                    "봇의 가장 높은 역할을 상품 역할보다 위로 올려 주세요. "
+                    "연동 관리 역할은 상품 역할로 사용할 수 없습니다.",
+                    color=discord.Color.red(),
+                    ephemeral=True,
+                )
+                return
 
         try:
             created = await asyncio.to_thread(

@@ -49,14 +49,28 @@ class Buy(commands.Cog):
                     ephemeral=True,
                 )
                 return
-            if (
-                not role_to_assign.is_assignable()
-                or not interaction.app_permissions.manage_roles
-            ):
+            bot_member = interaction.guild.me
+            if bot_member is None or not bot_member.guild_permissions.manage_roles:
                 await send_card(
                     interaction,
-                    "상품 역할을 지급할 수 없습니다",
-                    "봇의 역할 순서를 확인해 주세요.",
+                    "봇에 역할 관리 권한이 없습니다",
+                    "서버 설정에서 봇 역할에 `역할 관리` 권한을 부여해 주세요.",
+                    color=discord.Color.red(),
+                    ephemeral=True,
+                )
+                return
+            if not role_to_assign.is_assignable():
+                if role_to_assign.managed:
+                    message = "이 역할은 Discord 연동에서 관리하므로 봇이 지급할 수 없습니다."
+                else:
+                    message = (
+                        "봇의 가장 높은 역할을 상품 역할보다 위로 올려 주세요. "
+                        "구매자의 역할 순위와는 관계가 없습니다."
+                    )
+                await send_card(
+                    interaction,
+                    "봇이 상품 역할을 관리할 수 없습니다",
+                    message,
                     color=discord.Color.red(),
                     ephemeral=True,
                 )
