@@ -17,10 +17,11 @@ logging.basicConfig(
 )
 log = logging.getLogger("points-bot")
 
+VOICE_REWARDS_ENABLED = False
+
 EXTENSIONS = (
     "cogs.balance",
     "cogs.daily",
-    "cogs.voice_rewards",
     "cogs.pay",
     "cogs.shared_account",
     "cogs.grant",
@@ -39,7 +40,7 @@ EXTENSIONS = (
 class PointsBot(commands.Bot):
     def __init__(self, settings: Settings) -> None:
         intents = discord.Intents.default()
-        intents.voice_states = True
+        intents.voice_states = VOICE_REWARDS_ENABLED
         super().__init__(
             command_prefix=commands.when_mentioned,
             intents=intents,
@@ -51,9 +52,12 @@ class PointsBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         await asyncio.to_thread(self.store.initialize)
-        for extension in EXTENSIONS:
+        extensions = EXTENSIONS
+        if VOICE_REWARDS_ENABLED:
+            extensions += ("cogs.voice_rewards",)
+        for extension in extensions:
             await self.load_extension(extension)
-        log.info("Loaded %d command extensions", len(EXTENSIONS))
+        log.info("Loaded %d command extensions", len(extensions))
 
         if self.settings.sync_guild_id:
             guild = discord.Object(id=self.settings.sync_guild_id)
