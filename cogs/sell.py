@@ -34,6 +34,7 @@ class Sell(commands.Cog):
                 balance,
                 remaining_quantity,
                 remaining_stock,
+                role_id,
             ) = await asyncio.to_thread(
                 self.store.sell,
                 guild_id(interaction),
@@ -60,6 +61,31 @@ class Sell(commands.Cog):
             )
             return
 
+        role_message = ""
+        if role_id is not None:
+            role_to_remove = interaction.guild.get_role(role_id)
+            if role_to_remove is None:
+                role_message = (
+                    "\n연결된 역할을 찾을 수 없어 역할을 회수하지 못했습니다."
+                )
+            elif (
+                not role_to_remove.is_assignable()
+                or not interaction.app_permissions.manage_roles
+            ):
+                role_message = (
+                    "\n역할 회수에 실패했습니다. 봇의 역할 순서를 확인해 주세요."
+                )
+            else:
+                try:
+                    await interaction.user.remove_roles(
+                        role_to_remove, reason=f"상점 상품 판매: {name}"
+                    )
+                    role_message = f"\n회수된 역할: {role_to_remove.mention}"
+                except (discord.Forbidden, discord.HTTPException):
+                    role_message = (
+                        "\n역할 회수에 실패했습니다. 봇의 역할 순서를 확인해 주세요."
+                    )
+
         details = (
             f"판매 원금: **{principal:,} P** · 환급(80%): **{refund:,} P**\n"
             f"현재 잔액: **{balance:,} P**"
@@ -72,7 +98,8 @@ class Sell(commands.Cog):
         await send_card(
             interaction,
             "상품 판매 완료",
-            f"**{display_shop_name(name)}** 상품을 **{quantity:,}개** 판매했습니다.\n{details}",
+            f"**{display_shop_name(name)}** 상품을 **{quantity:,}개** 판매했습니다.\n"
+            f"{details}{role_message}",
             color=discord.Color.green(),
             ephemeral=True,
         )
