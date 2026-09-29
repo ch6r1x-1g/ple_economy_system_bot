@@ -20,6 +20,7 @@ log = logging.getLogger("points-bot")
 EXTENSIONS = (
     "cogs.balance",
     "cogs.daily",
+    "cogs.voice_rewards",
     "cogs.pay",
     "cogs.shared_account",
     "cogs.grant",
@@ -37,12 +38,16 @@ EXTENSIONS = (
 
 class PointsBot(commands.Bot):
     def __init__(self, settings: Settings) -> None:
+        intents = discord.Intents.default()
+        intents.voice_states = True
         super().__init__(
             command_prefix=commands.when_mentioned,
-            intents=discord.Intents.default(),
+            intents=intents,
         )
         self.settings = settings
-        self.store = EconomyStore(settings.database_path, settings.database_url)
+        self.store = EconomyStore(
+            settings.database_path, settings.database_url, settings.guild_ids
+        )
 
     async def setup_hook(self) -> None:
         await asyncio.to_thread(self.store.initialize)

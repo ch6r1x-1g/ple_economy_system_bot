@@ -16,6 +16,7 @@ Components V2 메시지는 Discord의 기존 임베드와 함께 사용할 수 �
 
 - `/잔액`: 내 잔액 확인
 - `/일일`: 설정된 시간대 기준 하루 한 번 보상 수령
+- 보이스 채널에 연결된 일반 계정(봇 제외)은 마이크가 켜져 있으면 시간당 100포인트, 본인 또는 서버가 음소거한 상태면 시간당 50포인트를 받습니다. Discord의 음소거 상태로 노마이크를 판별하며, 실제 마이크 장치 연결 여부는 감지하지 않습니다. 각 상태에서 쌓인 보상은 저장되어 다음 접속 때 이어서 계산합니다.
 - `/송금`: 다른 멤버에게 포인트 송금
 - `/공동계좌`: 서버 공동 계좌 잔액 확인
 - `/공동입금`, `/공동출금`: 개인 잔액과 서버 공동 계좌 사이에 포인트 이동
@@ -39,11 +40,25 @@ Components V2 메시지는 Discord의 기존 임베드와 함께 사용할 수 �
 2. Supabase 대시보드의 Connect에서 Direct 또는 Session pooler 연결 문자열을 복사해 .env의 SUPABASE_ADMIN_DATABASE_URL에 설정합니다. 관리자 연결 문자열은 이 1회 이전에만 사용하며, Transaction pooler는 사용할 수 없습니다.
 3. python migrate_to_supabase.py를 실행합니다.
 4. 이전이 끝나면 스크립트가 잔액, 상점, 인벤토리 데이터를 확인하고 앱 전용 DB 계정의 DATABASE_URL을 .env에 저장합니다. 관리자 연결 문자열은 .env에서 제거됩니다.
-5. python bot.py를 실행합니다. DATABASE_URL이 설정되어 있으면 Supabase를 사용하고, 비어 있으면 SQLite를 사용합니다.
+5. `supabase/migrations/20260927120000_create_voice_activity.sql`을 SQL Editor에서 실행합니다. `GUILD_IDS` 서버별 테이블을 쓰는 경우에는 먼저 서버별 테이블 분리 마이그레이션을 적용하세요.
+6. `python bot.py`를 실행합니다. `DATABASE_URL`이 설정되어 있으면 Supabase를 사용하고, 비어 있으면 SQLite를 사용합니다.
 
 이전 스크립트는 대상 테이블이 이미 있으면 기존 데이터를 덮어쓰지 않고 중단합니다. Supabase 테이블에는 RLS를 켜고 anon/authenticated/service_role 접근을 차단하며, 봇 전용 DB 역할만 접근하도록 설정합니다. 배포 환경에서는 .env 대신 해당 호스팅 서비스의 비밀 환경변수에 DATABASE_URL을 설정하세요.
 
 기존 Supabase 프로젝트에서 공동 계좌를 사용하려면 `supabase/migrations/20260926072621_create_shared_accounts.sql` 내용을 SQL Editor에서 한 번 실행해야 합니다. 이 SQL은 공개 API 역할을 차단하고 봇 전용 DB 역할에 필요한 접근만 허용합니다.
+
+보이스 채널 보상을 Supabase에서 사용하려면 `supabase/migrations/20260927120000_create_voice_activity.sql`도 SQL Editor에서 실행해야 합니다. 이 SQL은 남은 보이스 시간을 보관하는 테이블을 만들고 봇 전용 DB 역할만 접근하도록 설정합니다.
+
+### Discord 서버별 테이블 분리
+
+`GUILD_IDS`에 설정한 서버마다 잔액, 상점, 인벤토리, 공동 계좌 테이블을 따로 사용합니다. 현재 설정 대상은 `1352691962817548360`과 `1358747276754817074`입니다.
+
+1. `supabase/migrations/20260926101702_split_economy_tables_by_guild.sql` 전체 내용을 Supabase 대시보드의 SQL Editor에서 실행합니다.
+2. 봇을 실행하는 `.env` 또는 호스팅 서비스 환경변수에 `GUILD_IDS=1352691962817548360,1358747276754817074`를 설정합니다.
+3. `supabase/migrations/20260927120000_create_voice_activity.sql`도 SQL Editor에서 실행합니다. 기존 서버별 테이블에 보이스 시간 저장용 테이블을 추가합니다.
+4. 봇을 재시작합니다. 시작 시 필요한 서버별 테이블을 확인하고, 각 Discord 서버에서는 해당 ID가 붙은 테이블만 사용합니다.
+
+예를 들어 `accounts_1352691962817548360`과 `accounts_1358747276754817074`는 서로 분리됩니다. 다른 Discord 서버를 추가할 때는 해당 ID의 경제 테이블을 만들고 보이스 활동 마이그레이션도 적용한 다음 `GUILD_IDS`에 ID를 추가해야 합니다. 서버별 테이블을 설정하지 않은 기존 설치는 기존 테이블 이름을 계속 사용합니다.
 
 ## 실행
 
@@ -70,7 +85,10 @@ Discord Developer Portal에서 봇을 만든 뒤 초대할 때 `bot`과 `applica
 | --- | --- | --- |
 | `DISCORD_TOKEN` | 없음 | Discord 봇 토큰 |
 | `SYNC_GUILD_ID` | 전역 동기화 | 개발용 서버 ID |
+| `GUILD_IDS` | 비어 있음 | 서버별 테이블을 사용할 Discord 서버 ID 목록(쉼표 구분) |
 | `DAILY_REWARD` | `100` | 일일 보상 포인트 |
+| `VOICE_REWARD` | `100` | 보이스 채널 연결 1시간당 포인트 |
+| `VOICE_NO_MIC_REWARD` | `50` | 음소거 상태로 보이스 채널에 연결된 1시간당 포인트 |
 | `TIMEZONE` | `Asia/Seoul` | 일일 보상 기준 시간대 |
 | `DATABASE_PATH` | `data/economy.sqlite3` | SQLite 파일 경로 |
 | `DATABASE_URL` | 비어 있음 | 설정하면 사용하는 Supabase PostgreSQL 연결 문자열 |
