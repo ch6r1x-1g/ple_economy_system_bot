@@ -18,7 +18,7 @@ class Daily(commands.Cog):
         self.reward = reward
         self.timezone = timezone
 
-    @app_commands.command(name="일일", description="하루 한 번 포인트를 받습니다.")
+    @app_commands.command(name="일일", description="하루 한 번 월령을 받습니다.")
     @app_commands.guild_only()
     async def daily(self, interaction: discord.Interaction) -> None:
         today = datetime.now(self.timezone).date().isoformat()
@@ -33,7 +33,7 @@ class Daily(commands.Cog):
             await send_card(
                 interaction,
                 "오늘 보상은 이미 받았습니다",
-                f"현재 잔액: **{value:,} P**",
+                f"현재 잔액: **{value:,} 월령**",
                 color=discord.Color.orange(),
                 ephemeral=True,
             )
@@ -41,7 +41,7 @@ class Daily(commands.Cog):
         await send_card(
             interaction,
             "일일 보상 지급 완료",
-            f"일일 보상 **{self.reward:,} P**를 받았습니다!\n현재 잔액: **{value:,} P**",
+            f"일일 보상 **{self.reward:,} 월령**를 받았습니다!\n현재 잔액: **{value:,} 월령**",
             color=discord.Color.green(),
             ephemeral=True,
         )

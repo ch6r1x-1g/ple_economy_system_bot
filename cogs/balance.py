@@ -14,7 +14,7 @@ class Balance(commands.Cog):
     def __init__(self, store: EconomyStore) -> None:
         self.store = store
 
-    @app_commands.command(name="잔액", description="내 포인트 잔액을 확인합니다.")
+    @app_commands.command(name="잔액", description="내 월령 잔액을 확인합니다.")
     @app_commands.guild_only()
     async def balance(self, interaction: discord.Interaction) -> None:
         value = await asyncio.to_thread(
@@ -22,8 +22,8 @@ class Balance(commands.Cog):
         )
         await send_card(
             interaction,
-            "포인트 잔액",
-            f"내 잔액은 **{value:,} P**입니다.",
+            "월령 잔액",
+            f"내 잔액은 **{value:,} 월령**입니다.",
             color=discord.Color.gold(),
             ephemeral=True,
         )

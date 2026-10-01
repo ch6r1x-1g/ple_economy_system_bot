@@ -185,7 +185,7 @@ class ProductEdit(commands.Cog):
         await send_card(
             interaction,
             "상품 수정 완료",
-            f"**{display_shop_name(updated.name)}**\n가격: **{updated.price:,} P** · 재고: **{stock_text}**\n"
+            f"**{display_shop_name(updated.name)}**\n가격: **{updated.price:,} 월령** · 재고: **{stock_text}**\n"
             f"역할: {role_text}\n설명: {description_text}\n"
             "역할 변경은 이후 구매부터 적용됩니다.",
             color=discord.Color.green(),

@@ -17,7 +17,7 @@ class SetBalance(commands.Cog):
         self.store = store
 
     @app_commands.command(
-        name="잔액설정", description="멤버의 포인트 잔액을 설정합니다. (관리자)"
+        name="잔액설정", description="멤버의 월령 잔액을 설정합니다. (관리자)"
     )
     @administrator_only()
     @app_commands.describe(member="잔액을 설정할 멤버", amount="설정할 최종 잔액")
@@ -34,7 +34,7 @@ class SetBalance(commands.Cog):
         await send_card(
             interaction,
             "잔액 설정 완료",
-            f"{member.mention}님의 잔액을 **{amount:,} P**로 설정했습니다.",
+            f"{member.mention}님의 잔액을 **{amount:,} 월령**으로 설정했습니다.",
             color=discord.Color.green(),
             ephemeral=True,
         )

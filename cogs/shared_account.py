@@ -27,17 +27,17 @@ class SharedAccount(commands.Cog):
         await send_card(
             interaction,
             "마을 공동 계좌",
-            f"공동 계좌 잔액은 **{balance:,} P**입니다.",
+            f"공동 계좌 잔액은 **{balance:,} 월령**입니다.",
             color=discord.Color.gold(),
             ephemeral=True,
         )
 
     @app_commands.command(
-        name="공동입금", description="내 포인트를 마을 공동 계좌에 넣습니다."
+        name="공동입금", description="내 월령을 마을 공동 계좌에 넣습니다."
     )
     @app_commands.guild_only()
-    @app_commands.describe(amount="입금할 포인트")
-    @app_commands.rename(amount="포인트")
+    @app_commands.describe(amount="입금할 월령")
+    @app_commands.rename(amount="월령")
     async def deposit(
         self,
         interaction: discord.Interaction,
@@ -54,7 +54,7 @@ class SharedAccount(commands.Cog):
             await send_card(
                 interaction,
                 "입금할 수 없습니다",
-                f"개인 잔액이 부족합니다. 현재 잔액: **{error.balance:,} P**",
+                f"개인 잔액이 부족합니다. 현재 잔액: **{error.balance:,} 월령**",
                 color=discord.Color.red(),
                 ephemeral=True,
             )
@@ -63,19 +63,19 @@ class SharedAccount(commands.Cog):
         await send_card(
             interaction,
             "공동 계좌 입금 완료",
-            f"**{amount:,} P**를 입금했습니다.\n"
-            f"내 잔액: **{personal_balance:,} P** · 공동 계좌: **{shared_balance:,} P**",
+            f"**{amount:,} 월령**을 입금했습니다.\n"
+            f"내 잔액: **{personal_balance:,} 월령** · 공동 계좌: **{shared_balance:,} 월령**",
             color=discord.Color.green(),
             ephemeral=True,
         )
 
     @app_commands.command(
         name="공동출금",
-        description="마을 공동 계좌에서 포인트를 출금합니다. (관리자)",
+        description="마을 공동 계좌에서 월령을 출금합니다. (관리자)",
     )
     @administrator_only()
-    @app_commands.describe(amount="출금할 포인트")
-    @app_commands.rename(amount="포인트")
+    @app_commands.describe(amount="출금할 월령")
+    @app_commands.rename(amount="월령")
     async def withdraw(
         self,
         interaction: discord.Interaction,
@@ -92,7 +92,7 @@ class SharedAccount(commands.Cog):
             await send_card(
                 interaction,
                 "출금할 수 없습니다",
-                f"공동 계좌 잔액이 부족합니다. 현재 잔액: **{error.balance:,} P**",
+                f"공동 계좌 잔액이 부족합니다. 현재 잔액: **{error.balance:,} 월령**",
                 color=discord.Color.red(),
                 ephemeral=True,
             )
@@ -101,8 +101,8 @@ class SharedAccount(commands.Cog):
         await send_card(
             interaction,
             "공동 계좌 출금 완료",
-            f"**{amount:,} P**를 출금했습니다.\n"
-            f"내 잔액: **{personal_balance:,} P** · 공동 계좌: **{shared_balance:,} P**",
+            f"**{amount:,} 월령**을 출금했습니다.\n"
+            f"내 잔액: **{personal_balance:,} 월령** · 공동 계좌: **{shared_balance:,} 월령**",
             color=discord.Color.green(),
             ephemeral=True,
         )

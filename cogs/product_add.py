@@ -21,7 +21,7 @@ class ProductAdd(commands.Cog):
     @administrator_only()
     @app_commands.describe(
         name="상품 이름 (최대 50자)",
-        price="상품 가격 (포인트)",
+        price="상품 가격 (월령)",
         description="상품 설명 (선택)",
         stock="재고 수량 (비우면 무제한)",
         role="구매 시 지급할 역할 (선택)",
@@ -122,7 +122,7 @@ class ProductAdd(commands.Cog):
         await send_card(
             interaction,
             "상품 등록 완료",
-            f"**{display_shop_name(name)}** 상품을 등록했습니다.\n가격: **{price:,} P** · 재고: **{stock_text}**{role_text}",
+            f"**{display_shop_name(name)}** 상품을 등록했습니다.\n가격: **{price:,} 월령** · 재고: **{stock_text}**{role_text}",
             color=discord.Color.green(),
             ephemeral=True,
         )

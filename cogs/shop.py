@@ -34,7 +34,7 @@ class Shop(commands.Cog):
             details = item.description or "설명 없음"
             role = f"\n구매 시 역할: <@&{item.role_id}>" if item.role_id is not None else ""
             lines.append(
-                f"**{display_shop_name(item.name)}** · **{item.price:,} P** · "
+                f"**{display_shop_name(item.name)}** · **{item.price:,} 월령** · "
                 f"재고 {stock}{role}\n{details}"
             )
         await send_card(

@@ -15,10 +15,10 @@ class Pay(commands.Cog):
     def __init__(self, store: EconomyStore) -> None:
         self.store = store
 
-    @app_commands.command(name="송금", description="다른 멤버에게 포인트를 보냅니다.")
+    @app_commands.command(name="송금", description="다른 멤버에게 월령을 보냅니다.")
     @app_commands.guild_only()
-    @app_commands.describe(member="포인트를 받을 멤버", amount="보낼 포인트")
-    @app_commands.rename(member="받는_사람", amount="포인트")
+    @app_commands.describe(member="월령을 받을 멤버", amount="보낼 월령")
+    @app_commands.rename(member="받는_사람", amount="월령")
     async def pay(
         self,
         interaction: discord.Interaction,
@@ -54,8 +54,8 @@ class Pay(commands.Cog):
         except InsufficientFunds as error:
             await send_card(
                 interaction,
-                "포인트가 부족합니다",
-                f"현재 잔액: **{error.balance:,} P**",
+                "월령이 부족합니다",
+                f"현재 잔액: **{error.balance:,} 월령**",
                 color=discord.Color.red(),
                 ephemeral=True,
             )
@@ -63,8 +63,8 @@ class Pay(commands.Cog):
         await send_card(
             interaction,
             "송금 완료",
-            f"{member.mention}님에게 **{amount:,} P**를 보냈습니다. "
-            f"내 잔액: **{sender_balance:,} P** · 상대 잔액: **{recipient_balance:,} P**",
+            f"{member.mention}님에게 **{amount:,} 월령**을 보냈습니다. "
+            f"내 잔액: **{sender_balance:,} 월령** · 상대 잔액: **{recipient_balance:,} 월령**",
             color=discord.Color.green(),
             ephemeral=True,
         )

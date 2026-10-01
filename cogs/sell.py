@@ -89,8 +89,8 @@ class Sell(commands.Cog):
                     )
 
         details = (
-            f"판매 원금: **{principal:,} P** · 환급(80%): **{refund:,} P**\n"
-            f"현재 잔액: **{balance:,} P**"
+            f"판매 원금: **{principal:,} 월령** · 환급(80%): **{refund:,} 월령**\n"
+            f"현재 잔액: **{balance:,} 월령**"
         )
         if remaining_quantity:
             details += f"\n남은 수량: **{remaining_quantity:,}개**"

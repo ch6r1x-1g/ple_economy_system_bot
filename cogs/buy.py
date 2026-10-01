@@ -104,9 +104,9 @@ class Buy(commands.Cog):
         except InsufficientFunds as error:
             await send_card(
                 interaction,
-                "포인트가 부족합니다",
-                f"필요 포인트: **{(error.required or 0):,} P**\n"
-                f"현재 잔액: **{error.balance:,} P**",
+                "월령이 부족합니다",
+                f"필요 월령: **{(error.required or 0):,} 월령**\n"
+                f"현재 잔액: **{error.balance:,} 월령**",
                 color=discord.Color.red(),
                 ephemeral=True,
             )
@@ -131,7 +131,7 @@ class Buy(commands.Cog):
             interaction,
             "구매 완료",
             f"**{display_shop_name(name)}** 상품을 **{quantity:,}개** 구매했습니다.\n"
-            f"결제 포인트: **{total:,} P**\n현재 잔액: **{balance:,} P**"
+            f"결제액: **{total:,} 월령**\n현재 잔액: **{balance:,} 월령**"
             f"{stock_message}{role_message}",
             color=discord.Color.green(),
             ephemeral=True,
