@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from economy import EconomyStore, InsufficientFunds, InsufficientSharedFunds
+from permissions import administrator_only
 from presentation import guild_id, send_card
 from settings import MAX_POINTS
 
@@ -70,9 +71,9 @@ class SharedAccount(commands.Cog):
 
     @app_commands.command(
         name="공동출금",
-        description="마을 공동 계좌에서 내 잔액으로 포인트를 꺼냅니다.",
+        description="마을 공동 계좌에서 포인트를 출금합니다. (관리자)",
     )
-    @app_commands.guild_only()
+    @administrator_only()
     @app_commands.describe(amount="출금할 포인트")
     @app_commands.rename(amount="포인트")
     async def withdraw(

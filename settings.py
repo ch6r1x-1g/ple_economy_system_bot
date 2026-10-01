@@ -11,7 +11,6 @@ MAX_POINTS = 1_000_000_000
 
 @dataclass(frozen=True)
 class Settings:
-    token: str
     daily_reward: int
     voice_reward: int
     voice_no_mic_reward: int
@@ -24,10 +23,6 @@ class Settings:
 
 def load_settings() -> Settings:
     load_dotenv()
-
-    token = os.getenv("DISCORD_TOKEN", "").strip()
-    if not token or token == "여기에_봇_토큰":
-        raise RuntimeError("환경 변수 DISCORD_TOKEN을(를) 설정해 주세요.")
 
     try:
         daily_reward = int(os.getenv("DAILY_REWARD", "100"))
@@ -84,7 +79,6 @@ def load_settings() -> Settings:
         ) from error
 
     return Settings(
-        token=token,
         daily_reward=daily_reward,
         voice_reward=voice_reward,
         voice_no_mic_reward=voice_no_mic_reward,

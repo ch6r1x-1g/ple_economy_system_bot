@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from economy import EconomyStore
+from permissions import administrator_only
 from presentation import guild_id, send_card
 from settings import MAX_POINTS
 
@@ -16,9 +17,7 @@ class Grant(commands.Cog):
         self.store = store
 
     @app_commands.command(name="지급", description="멤버에게 포인트를 지급합니다. (관리자)")
-    @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.checks.has_permissions(administrator=True)
+    @administrator_only()
     @app_commands.describe(member="지급할 멤버", amount="지급할 포인트")
     @app_commands.rename(member="대상", amount="포인트")
     async def grant(

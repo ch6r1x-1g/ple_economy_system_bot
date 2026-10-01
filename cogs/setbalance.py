@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from economy import EconomyStore
+from permissions import administrator_only
 from presentation import guild_id, send_card
 from settings import MAX_POINTS
 
@@ -18,9 +19,7 @@ class SetBalance(commands.Cog):
     @app_commands.command(
         name="잔액설정", description="멤버의 포인트 잔액을 설정합니다. (관리자)"
     )
-    @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.checks.has_permissions(administrator=True)
+    @administrator_only()
     @app_commands.describe(member="잔액을 설정할 멤버", amount="설정할 최종 잔액")
     @app_commands.rename(member="대상", amount="잔액")
     async def setbalance(

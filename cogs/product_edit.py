@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from economy import EconomyStore, ShopItemNameTaken
+from permissions import administrator_only
 from presentation import guild_id, send_card
 from shop_names import display_shop_name, normalize_shop_name
 from settings import MAX_POINTS
@@ -17,9 +18,7 @@ class ProductEdit(commands.Cog):
         self.store = store
 
     @app_commands.command(name="상품수정", description="상점 상품 정보를 수정합니다. (관리자)")
-    @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.checks.has_permissions(administrator=True)
+    @administrator_only()
     @app_commands.describe(
         name="수정할 상품 이름",
         new_name="새 상품 이름 (띄어쓰기 포함)",

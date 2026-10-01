@@ -7,6 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from credentials import load_discord_token
 from economy import EconomyStore
 from presentation import send_card
 from settings import Settings, load_settings
@@ -80,6 +81,12 @@ settings = load_settings()
 bot = PointsBot(settings)
 
 
+@bot.event
+async def on_ready() -> None:
+    await bot.change_presence(activity=discord.Game(name="티모의 정찰대 🍄"))
+    log.info("Logged in as %s", bot.user)
+
+
 @bot.tree.error
 async def on_app_command_error(
     interaction: discord.Interaction, error: app_commands.AppCommandError
@@ -105,4 +112,4 @@ async def on_app_command_error(
 
 
 if __name__ == "__main__":
-    bot.run(settings.token, log_handler=None)
+    bot.run(load_discord_token(), log_handler=None)
