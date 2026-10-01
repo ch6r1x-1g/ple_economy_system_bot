@@ -83,7 +83,7 @@ bot = PointsBot(settings)
 
 @bot.event
 async def on_ready() -> None:
-    await bot.change_presence(activity=discord.Game(name="티모의 정찰대 🍄"))
+    await bot.change_presence(activity=discord.Game(name="보름달에서 버섯 농사 🍄"))
     log.info("Logged in as %s", bot.user)
 
 
