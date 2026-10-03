@@ -25,6 +25,10 @@ class Sell(commands.Cog):
         item_name: str,
         quantity: app_commands.Range[int, 1, 100] = 1,
     ) -> None:
+        # Selling can involve database work and a Discord role update. Acknowledge
+        # the interaction first so the result can be sent as a followup.
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
         requested_name = normalize_shop_name(item_name)
         try:
             (
@@ -46,7 +50,7 @@ class Sell(commands.Cog):
             await send_card(
                 interaction,
                 "인벤토리에 상품이 없습니다",
-                "`/인벤토리`에서 판매할 상품 이름을 확인해 주세요.",
+                "`/가방`에서 판매할 상품 이름을 확인해 주세요.",
                 color=discord.Color.red(),
                 ephemeral=True,
             )

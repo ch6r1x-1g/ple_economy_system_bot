@@ -25,6 +25,10 @@ class Buy(commands.Cog):
         item_name: str,
         quantity: app_commands.Range[int, 1, 100] = 1,
     ) -> None:
+        # A purchase may need several database and Discord API calls. Acknowledge
+        # the interaction before doing that work so Discord does not expire it.
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
         requested_name = normalize_shop_name(item_name)
         role_to_assign: discord.Role | None = None
         shop_items = await asyncio.to_thread(
