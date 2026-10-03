@@ -34,6 +34,7 @@ EXTENSIONS = (
     "cogs.product_add",
     "cogs.product_remove",
     "cogs.product_edit",
+    "cogs.autoresponder",
 )
 
 
@@ -41,6 +42,7 @@ class PointsBot(commands.Bot):
     def __init__(self, settings: Settings) -> None:
         intents = discord.Intents.default()
         intents.voice_states = VOICE_REWARDS_ENABLED
+        intents.message_content = True
         super().__init__(
             command_prefix=commands.when_mentioned,
             intents=intents,

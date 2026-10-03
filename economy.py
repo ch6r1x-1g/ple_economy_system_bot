@@ -18,6 +18,7 @@ class _StoreConnection:
         "inventory",
         "shared_accounts",
         "voice_activity",
+        "autoresponders",
     )
 
     def __init__(
@@ -111,6 +112,25 @@ class ShopItem:
     role_id: int | None
 
 
+@dataclass(frozen=True)
+class AutoResponderEntry:
+    trigger: str
+    trigger_key: str
+    response: str
+    match_mode: str
+    response_type: str
+    embed_title: str | None
+    embed_color: int | None
+
+
+class AutoResponderLimitReached(Exception):
+    pass
+
+
+AUTORESPONDER_LIMIT = 100
+AUTORESPONDER_MATCH_MODES = {"exact", "startswith", "endswith", "includes"}
+
+
 class EconomyStore:
     def __init__(
         self,
@@ -202,6 +222,39 @@ class EconomyStore:
             )
 
     @staticmethod
+    def _initialize_autoresponders_table(connection: Any, table_name: str) -> None:
+        connection.execute(
+            f"""CREATE TABLE IF NOT EXISTS {table_name} (
+                guild_id INTEGER NOT NULL,
+                trigger_text TEXT NOT NULL CHECK (length(trigger_text) BETWEEN 1 AND 100),
+                trigger_key TEXT NOT NULL,
+                response TEXT NOT NULL CHECK (length(response) BETWEEN 1 AND 2000),
+                match_mode TEXT NOT NULL DEFAULT 'exact'
+                    CHECK (match_mode IN ('exact', 'startswith', 'endswith', 'includes')),
+                response_type TEXT NOT NULL DEFAULT 'text'
+                    CHECK (response_type IN ('text', 'embed')),
+                embed_title TEXT,
+                embed_color INTEGER,
+                PRIMARY KEY (guild_id, trigger_key)
+            )"""
+        )
+        columns = {
+            str(row["name"])
+            for row in connection.execute(
+                f"PRAGMA table_info({table_name})"
+            ).fetchall()
+        }
+        if "response_type" not in columns:
+            connection.execute(
+                f"""ALTER TABLE {table_name}
+                    ADD COLUMN response_type TEXT NOT NULL DEFAULT 'text'"""
+            )
+        if "embed_title" not in columns:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN embed_title TEXT")
+        if "embed_color" not in columns:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN embed_color INTEGER")
+
+    @staticmethod
     def _ensure_shared_account(connection: Any, guild_id: int) -> None:
         connection.execute(
             """INSERT OR IGNORE INTO shared_accounts (guild_id, balance)
@@ -231,6 +284,13 @@ class EconomyStore:
                                 f"'voice_activity_{guild_id}' AND column_name = "
                                 "'accrued_units') AS voice_units"
                             )
+                        for embed_column in ("response_type", "embed_title", "embed_color"):
+                            status_columns.append(
+                                "EXISTS (SELECT 1 FROM information_schema.columns "
+                                "WHERE table_schema = 'public' AND table_name = "
+                                f"'autoresponders_{guild_id}' AND column_name = "
+                                f"'{embed_column}') AS responder_{embed_column}"
+                            )
                         found = connection.execute(
                             "SELECT " + ", ".join(status_columns)
                         ).fetchone()
@@ -243,13 +303,29 @@ class EconomyStore:
                             missing.append(
                                 f"voice_activity_{guild_id}.accrued_units"
                             )
+                        for embed_column in ("response_type", "embed_title", "embed_color"):
+                            if not found[f"responder_{embed_column}"]:
+                                missing.append(
+                                    f"autoresponders_{guild_id}.{embed_column}"
+                                )
                         if missing:
+                            responder_tables_missing = any(
+                                name.startswith("autoresponders_") for name in missing
+                            )
                             raise RuntimeError(
                                 "Supabase 서버별 테이블이 없습니다: "
                                 + ", ".join(missing)
                                 + ". supabase/migrations의 서버별 경제 테이블 및 "
                                 "20260927120000_create_voice_activity.sql 파일을 "
                                 "Supabase SQL Editor에서 적용해 주세요."
+                                + (
+                                    " 자동 응답 테이블은 "
+                                    "20261003120000_create_autoresponders.sql 파일을 "
+                                    "적용한 다음 20261003130000_add_autoresponder_embeds.sql "
+                                    "파일도 적용해 주세요."
+                                    if responder_tables_missing
+                                    else ""
+                                )
                             )
                     return
 
@@ -259,6 +335,13 @@ class EconomyStore:
                            to_regclass('public.shop_items') AS shop_items,
                            to_regclass('public.inventory') AS inventory,
                            to_regclass('public.shared_accounts') AS shared_accounts,
+                           to_regclass('public.autoresponders') AS autoresponders,
+                           (
+                               SELECT COUNT(*) = 3 FROM information_schema.columns
+                               WHERE table_schema = 'public'
+                                 AND table_name = 'autoresponders'
+                                 AND column_name IN ('response_type', 'embed_title', 'embed_color')
+                           ) AS autoresponder_embeds,
                            to_regclass('public.voice_activity') AS voice_activity,
                            EXISTS (
                                SELECT 1 FROM information_schema.columns
@@ -281,6 +364,18 @@ class EconomyStore:
                         "Supabase 공동 계좌 테이블이 없습니다. "
                         "supabase/migrations의 create_shared_accounts SQL을 "
                         "Supabase SQL Editor에서 적용해 주세요."
+                    )
+                if row["autoresponders"] is None:
+                    raise RuntimeError(
+                        "Supabase 자동 응답기 테이블이 없습니다. "
+                        "supabase/migrations/20261003120000_create_autoresponders.sql "
+                        "파일을 Supabase SQL Editor에서 적용해 주세요."
+                    )
+                if not row["autoresponder_embeds"]:
+                    raise RuntimeError(
+                        "Supabase 자동 응답 임베드 컬럼이 없습니다. "
+                        "supabase/migrations/20261003130000_add_autoresponder_embeds.sql "
+                        "파일을 Supabase SQL Editor에서 적용해 주세요."
                     )
                 if voice_rewards_enabled and row["voice_activity"] is None:
                     raise RuntimeError(
@@ -335,6 +430,9 @@ class EconomyStore:
                             balance INTEGER NOT NULL DEFAULT 0 CHECK (balance >= 0)
                         )"""
                     )
+                    self._initialize_autoresponders_table(
+                        connection, f"autoresponders_{guild_id}"
+                    )
                     if voice_rewards_enabled:
                         self._initialize_voice_activity_table(
                             connection, f"voice_activity_{guild_id}"
@@ -356,6 +454,7 @@ class EconomyStore:
                     balance INTEGER NOT NULL DEFAULT 0 CHECK (balance >= 0)
                 )"""
             )
+            self._initialize_autoresponders_table(connection, "autoresponders")
             if voice_rewards_enabled:
                 self._initialize_voice_activity_table(connection, "voice_activity")
             connection.execute(
@@ -943,3 +1042,149 @@ class EconomyStore:
                 (guild_id, user_id),
             ).fetchall()
             return [(str(row["item_name"]), int(row["quantity"])) for row in rows]
+
+    @staticmethod
+    def _autoresponder_entry(row: Any) -> AutoResponderEntry:
+        return AutoResponderEntry(
+            trigger=str(row["trigger_text"]),
+            trigger_key=str(row["trigger_key"]),
+            response=str(row["response"]),
+            match_mode=str(row["match_mode"]),
+            response_type=str(row["response_type"]),
+            embed_title=(
+                None if row["embed_title"] is None else str(row["embed_title"])
+            ),
+            embed_color=(
+                None if row["embed_color"] is None else int(row["embed_color"])
+            ),
+        )
+
+    def add_autoresponder(
+        self,
+        guild_id: int,
+        trigger: str,
+        response: str,
+        match_mode: str = "exact",
+        *,
+        response_type: str = "text",
+        embed_title: str | None = None,
+        embed_color: int | None = None,
+    ) -> bool:
+        trigger_key = trigger.casefold()
+        if match_mode not in AUTORESPONDER_MATCH_MODES:
+            raise ValueError("invalid autoresponder match mode")
+        if response_type not in {"text", "embed"}:
+            raise ValueError("invalid autoresponder response type")
+        with self._connect(guild_id) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                """SELECT 1 FROM autoresponders
+                   WHERE guild_id = ? AND trigger_key = ?""",
+                (guild_id, trigger_key),
+            ).fetchone()
+            if existing is not None:
+                return False
+            count = connection.execute(
+                "SELECT COUNT(*) AS total FROM autoresponders WHERE guild_id = ?",
+                (guild_id,),
+            ).fetchone()
+            if int(count["total"]) >= AUTORESPONDER_LIMIT:
+                raise AutoResponderLimitReached
+            result = connection.execute(
+                """INSERT OR IGNORE INTO autoresponders
+                   (guild_id, trigger_text, trigger_key, response, match_mode,
+                    response_type, embed_title, embed_color)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    guild_id,
+                    trigger,
+                    trigger_key,
+                    response,
+                    match_mode,
+                    response_type,
+                    embed_title,
+                    embed_color,
+                ),
+            )
+            return result.rowcount > 0
+
+    def list_autoresponders(
+        self, guild_id: int, *, page: int = 1, page_size: int = 20
+    ) -> tuple[list[AutoResponderEntry], int]:
+        offset = max(0, page - 1) * page_size
+        with self._connect(guild_id) as connection:
+            count = connection.execute(
+                "SELECT COUNT(*) AS total FROM autoresponders WHERE guild_id = ?",
+                (guild_id,),
+            ).fetchone()
+            rows = connection.execute(
+                """SELECT trigger_text, trigger_key, response, match_mode,
+                          response_type, embed_title, embed_color
+                   FROM autoresponders WHERE guild_id = ?
+                   ORDER BY trigger_key LIMIT ? OFFSET ?""",
+                (guild_id, page_size, offset),
+            ).fetchall()
+            return [self._autoresponder_entry(row) for row in rows], int(count["total"])
+
+    def all_autoresponders(self, guild_id: int) -> list[AutoResponderEntry]:
+        with self._connect(guild_id) as connection:
+            rows = connection.execute(
+                """SELECT trigger_text, trigger_key, response, match_mode,
+                          response_type, embed_title, embed_color
+                   FROM autoresponders WHERE guild_id = ?""",
+                (guild_id,),
+            ).fetchall()
+            return [self._autoresponder_entry(row) for row in rows]
+
+    def edit_autoresponder(
+        self, guild_id: int, trigger: str, response: str
+    ) -> bool:
+        with self._connect(guild_id) as connection:
+            result = connection.execute(
+                """UPDATE autoresponders
+                   SET response = ?, response_type = 'text',
+                       embed_title = NULL, embed_color = NULL
+                   WHERE guild_id = ? AND trigger_key = ?""",
+                (response, guild_id, trigger.casefold()),
+            )
+            return result.rowcount > 0
+
+    def edit_autoresponder_embed(
+        self,
+        guild_id: int,
+        trigger: str,
+        title: str,
+        description: str,
+        color: int,
+    ) -> bool:
+        with self._connect(guild_id) as connection:
+            result = connection.execute(
+                """UPDATE autoresponders
+                   SET response = ?, response_type = 'embed',
+                       embed_title = ?, embed_color = ?
+                   WHERE guild_id = ? AND trigger_key = ?""",
+                (description, title, color, guild_id, trigger.casefold()),
+            )
+            return result.rowcount > 0
+
+    def set_autoresponder_match_mode(
+        self, guild_id: int, trigger: str, match_mode: str
+    ) -> bool:
+        if match_mode not in AUTORESPONDER_MATCH_MODES:
+            raise ValueError("invalid autoresponder match mode")
+        with self._connect(guild_id) as connection:
+            result = connection.execute(
+                """UPDATE autoresponders SET match_mode = ?
+                   WHERE guild_id = ? AND trigger_key = ?""",
+                (match_mode, guild_id, trigger.casefold()),
+            )
+            return result.rowcount > 0
+
+    def remove_autoresponder(self, guild_id: int, trigger: str) -> bool:
+        with self._connect(guild_id) as connection:
+            result = connection.execute(
+                """DELETE FROM autoresponders
+                   WHERE guild_id = ? AND trigger_key = ?""",
+                (guild_id, trigger.casefold()),
+            )
+            return result.rowcount > 0
