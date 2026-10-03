@@ -100,9 +100,11 @@ class VoiceRewards(commands.Cog):
         for guild in self.bot.guilds:
             if configured_guilds and guild.id not in configured_guilds:
                 continue
-            for user_id, voice_state in guild.voice_states.items():
-                if voice_state.channel is not None:
-                    connected[(guild.id, user_id)] = voice_state
+            channels = (*guild.voice_channels, *guild.stage_channels)
+            for channel in channels:
+                for user_id, voice_state in channel.voice_states.items():
+                    if voice_state.channel is not None:
+                        connected[(guild.id, user_id)] = voice_state
 
         sessions: dict[tuple[int, int], _VoiceSession] = {}
         for key, voice_state in connected.items():
@@ -112,9 +114,6 @@ class VoiceRewards(commands.Cog):
                 continue
 
             member = guild.get_member(user_id)
-            if member is None:
-                state = guild.voice_states.get(user_id)
-                member = None if state is None else state.member
             if member is None:
                 try:
                     member = await guild.fetch_member(user_id)
