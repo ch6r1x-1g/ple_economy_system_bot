@@ -21,7 +21,7 @@ log = logging.getLogger("points-bot")
 VOICE_REWARDS_ENABLED = False
 
 EXTENSIONS = (
-    "cogs.balance",
+    "cogs.bag",
     "cogs.daily",
     "cogs.pay",
     "cogs.shared_account",
@@ -30,7 +30,6 @@ EXTENSIONS = (
     "cogs.setbalance",
     "cogs.shop",
     "cogs.buy",
-    "cogs.inventory",
     "cogs.sell",
     "cogs.product_add",
     "cogs.product_remove",
