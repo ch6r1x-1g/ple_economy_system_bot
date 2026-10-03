@@ -32,10 +32,9 @@ class CardView(discord.ui.LayoutView):
         self.add_item(
             discord.ui.Container(
                 discord.ui.TextDisplay(f"## {title}"),
+                discord.ui.TextDisplay(f"*“{command_tip}”*"),
                 discord.ui.Separator(),
                 discord.ui.TextDisplay(body),
-                discord.ui.Separator(),
-                discord.ui.TextDisplay(f"*🍄 티모: “{command_tip}”*"),
                 accent_color=color,
             )
         )
