@@ -18,7 +18,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("points-bot")
 
-VOICE_REWARDS_ENABLED = False
+VOICE_REWARDS_ENABLED = True
 
 EXTENSIONS = (
     "cogs.bag",
