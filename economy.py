@@ -613,9 +613,19 @@ class EconomyStore:
         guild_id: int,
         user_id: int,
         reward_units: int,
+        reward_per_hour: int = 100,
+        *,
+        reset_remainder: bool = False,
     ) -> tuple[int, int]:
-        """Persist fractional rewards and credit each completed 3,600 units."""
-        if reward_units <= 0:
+        """Save weighted seconds and pay only for completed voice hours.
+
+        Keep the existing units (seconds * hourly reward) so saved unpaid
+        fractions remain valid without a database migration.
+        On leave, settle full hours and discard the remainder atomically.
+        """
+        if reward_per_hour <= 0:
+            raise ValueError("reward_per_hour must be positive")
+        if reward_units < 0 or (reward_units == 0 and not reset_remainder):
             return 0, self.balance(guild_id, user_id)
 
         with self._connect(guild_id) as connection:
@@ -632,11 +642,12 @@ class EconomyStore:
                 (guild_id, user_id),
             ).fetchone()
             total_units = int(activity["accrued_units"]) + reward_units
-            reward, remainder = divmod(total_units, 3600)
+            hours, remainder = divmod(total_units, 3600 * reward_per_hour)
+            reward = hours * reward_per_hour
             connection.execute(
                 """UPDATE voice_activity SET accrued_units = ?
                    WHERE guild_id = ? AND user_id = ?""",
-                (remainder, guild_id, user_id),
+                (0 if reset_remainder else remainder, guild_id, user_id),
             )
             if reward:
                 connection.execute(

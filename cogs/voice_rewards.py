@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
 from dataclasses import dataclass
 
 import discord
@@ -15,7 +16,12 @@ log = logging.getLogger("points-bot.voice-rewards")
 @dataclass
 class _VoiceSession:
     started_at: float
-    reward_per_hour: int
+
+
+@dataclass
+class _PendingVoiceReward:
+    units: int = 0
+    ended: bool = False
 
 
 class VoiceRewards(commands.Cog):
@@ -28,14 +34,12 @@ class VoiceRewards(commands.Cog):
         bot: commands.Bot,
         store: EconomyStore,
         reward_per_hour: int,
-        no_mic_reward_per_hour: int,
     ) -> None:
         self.bot = bot
         self.store = store
         self.reward_per_hour = reward_per_hour
-        self.no_mic_reward_per_hour = no_mic_reward_per_hour
         self._sessions: dict[tuple[int, int], _VoiceSession] = {}
-        self._pending_reward_units: dict[tuple[int, int], int] = {}
+        self._pending_rewards: dict[tuple[int, int], deque[_PendingVoiceReward]] = {}
         self._lock = asyncio.Lock()
         self._gateway_ready = False
         self._flush_loop.start()
@@ -77,20 +81,16 @@ class VoiceRewards(commands.Cog):
             session = self._sessions.get(key)
             if session is not None:
                 self._queue_elapsed(key, session, now)
-                await self._flush_pending(key)
 
             if after.channel is None:
+                self._end_session(key)
                 self._sessions.pop(key, None)
-            else:
-                # Re-anchor after a channel move or mute/deafen state change.
-                self._sessions[key] = _VoiceSession(
-                    now, self._hourly_reward(after)
-                )
-
-    def _hourly_reward(self, voice_state: discord.VoiceState) -> int:
-        if voice_state.self_mute or voice_state.mute:
-            return self.no_mic_reward_per_hour
-        return self.reward_per_hour
+            elif session is None:
+                if before.channel is None:
+                    # A fresh join must not inherit a saved, older session.
+                    self._end_session(key)
+                self._sessions[key] = _VoiceSession(now)
+            await self._flush_pending(key)
 
     async def _sync_voice_sessions(self) -> None:
         now = asyncio.get_running_loop().time()
@@ -107,7 +107,7 @@ class VoiceRewards(commands.Cog):
                         connected[(guild.id, user_id)] = voice_state
 
         sessions: dict[tuple[int, int], _VoiceSession] = {}
-        for key, voice_state in connected.items():
+        for key in connected:
             guild_id, user_id = key
             guild = self.bot.get_guild(guild_id)
             if guild is None:
@@ -127,10 +127,14 @@ class VoiceRewards(commands.Cog):
                     continue
 
             if not member.bot:
-                sessions[key] = _VoiceSession(now, self._hourly_reward(voice_state))
+                sessions[key] = _VoiceSession(now)
 
         async with self._lock:
             was_gateway_ready = self._gateway_ready
+            # A member may have left while the gateway was disconnected.
+            for key in self._sessions.keys() - connected.keys():
+                self._end_session(key)
+                await self._flush_pending(key)
             # Keep a previously identified human if Discord's cache could not
             # resolve them during a reconnect, as long as they are still present.
             for key in connected:
@@ -140,9 +144,7 @@ class VoiceRewards(commands.Cog):
                     sessions[key] = (
                         self._sessions[key]
                         if was_gateway_ready
-                        else _VoiceSession(
-                            now, self._sessions[key].reward_per_hour
-                        )
+                        else _VoiceSession(now)
                     )
             self._sessions = sessions
             self._gateway_ready = True
@@ -152,47 +154,58 @@ class VoiceRewards(commands.Cog):
     ) -> None:
         elapsed = max(0, int(now - session.started_at))
         if elapsed:
-            self._pending_reward_units[key] = (
-                self._pending_reward_units.get(key, 0)
-                + elapsed * session.reward_per_hour
-            )
+            self._pending_batch(key).units += elapsed * self.reward_per_hour
             session.started_at += elapsed
 
-    async def _flush_pending(self, key: tuple[int, int]) -> None:
-        reward_units = self._pending_reward_units.get(key, 0)
-        if reward_units <= 0:
-            return
-        guild_id, user_id = key
-        try:
-            reward, _ = await asyncio.to_thread(
-                self.store.accrue_voice_reward_units,
-                guild_id,
-                user_id,
-                reward_units,
-            )
-        except Exception:
-            log.exception(
-                "Could not save voice time for user %s in guild %s",
-                user_id,
-                guild_id,
-            )
-            return
+    def _pending_batch(self, key: tuple[int, int]) -> _PendingVoiceReward:
+        pending = self._pending_rewards.setdefault(key, deque())
+        if not pending or pending[-1].ended:
+            pending.append(_PendingVoiceReward())
+        return pending[-1]
 
-        self._pending_reward_units.pop(key, None)
-        if reward:
-            log.info(
-                "Granted %s voice points to user %s in guild %s",
-                reward,
-                user_id,
-                guild_id,
-            )
+    def _end_session(self, key: tuple[int, int]) -> None:
+        # Keep the session boundary queued even if a DB write fails and the
+        # member rejoins before it can be retried.
+        self._pending_batch(key).ended = True
+
+    async def _flush_pending(self, key: tuple[int, int]) -> None:
+        pending = self._pending_rewards.get(key)
+        guild_id, user_id = key
+        while pending:
+            batch = pending[0]
+            try:
+                reward, _ = await asyncio.to_thread(
+                    self.store.accrue_voice_reward_units,
+                    guild_id,
+                    user_id,
+                    batch.units,
+                    self.reward_per_hour,
+                    reset_remainder=batch.ended,
+                )
+            except Exception:
+                log.exception(
+                    "Could not save voice time for user %s in guild %s",
+                    user_id,
+                    guild_id,
+                )
+                return
+
+            pending.popleft()
+            if reward:
+                log.info(
+                    "Granted %s voice points to user %s in guild %s",
+                    reward,
+                    user_id,
+                    guild_id,
+                )
+        self._pending_rewards.pop(key, None)
 
     async def _flush_active_sessions(self) -> None:
         now = asyncio.get_running_loop().time()
         async with self._lock:
             for key, session in tuple(self._sessions.items()):
                 self._queue_elapsed(key, session, now)
-            for key in tuple(self._pending_reward_units):
+            for key in tuple(self._pending_rewards):
                 await self._flush_pending(key)
 
 
@@ -202,6 +215,5 @@ async def setup(bot: commands.Bot) -> None:
             bot,
             bot.store,
             bot.settings.voice_reward,
-            bot.settings.voice_no_mic_reward,
         )
     )
