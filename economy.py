@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from autoresponder_rewards import parse_reward_spec
+
 
 class _StoreConnection:
     """Adapt store SQL and route table names to one Discord server."""
@@ -121,6 +123,7 @@ class AutoResponderEntry:
     response_type: str
     embed_title: str | None
     embed_color: int | None
+    reward_spec: str = "0"
 
 
 class AutoResponderLimitReached(Exception):
@@ -235,6 +238,8 @@ class EconomyStore:
                     CHECK (response_type IN ('text', 'embed')),
                 embed_title TEXT,
                 embed_color INTEGER,
+                reward_spec TEXT NOT NULL DEFAULT '0'
+                    CHECK (length(reward_spec) BETWEEN 1 AND 256),
                 PRIMARY KEY (guild_id, trigger_key)
             )"""
         )
@@ -253,6 +258,11 @@ class EconomyStore:
             connection.execute(f"ALTER TABLE {table_name} ADD COLUMN embed_title TEXT")
         if "embed_color" not in columns:
             connection.execute(f"ALTER TABLE {table_name} ADD COLUMN embed_color INTEGER")
+        if "reward_spec" not in columns:
+            connection.execute(
+                f"""ALTER TABLE {table_name} ADD COLUMN reward_spec TEXT NOT NULL DEFAULT '0'
+                    CHECK (length(reward_spec) BETWEEN 1 AND 256)"""
+            )
 
     @staticmethod
     def _ensure_shared_account(connection: Any, guild_id: int) -> None:
@@ -284,12 +294,12 @@ class EconomyStore:
                                 f"'voice_activity_{guild_id}' AND column_name = "
                                 "'accrued_units') AS voice_units"
                             )
-                        for embed_column in ("response_type", "embed_title", "embed_color"):
+                        for responder_column in ("response_type", "embed_title", "embed_color", "reward_spec"):
                             status_columns.append(
                                 "EXISTS (SELECT 1 FROM information_schema.columns "
                                 "WHERE table_schema = 'public' AND table_name = "
                                 f"'autoresponders_{guild_id}' AND column_name = "
-                                f"'{embed_column}') AS responder_{embed_column}"
+                                f"'{responder_column}') AS responder_{responder_column}"
                             )
                         found = connection.execute(
                             "SELECT " + ", ".join(status_columns)
@@ -303,10 +313,10 @@ class EconomyStore:
                             missing.append(
                                 f"voice_activity_{guild_id}.accrued_units"
                             )
-                        for embed_column in ("response_type", "embed_title", "embed_color"):
-                            if not found[f"responder_{embed_column}"]:
+                        for responder_column in ("response_type", "embed_title", "embed_color", "reward_spec"):
+                            if not found[f"responder_{responder_column}"]:
                                 missing.append(
-                                    f"autoresponders_{guild_id}.{embed_column}"
+                                    f"autoresponders_{guild_id}.{responder_column}"
                                 )
                         if missing:
                             responder_tables_missing = any(
@@ -322,6 +332,7 @@ class EconomyStore:
                                     " 자동 응답 테이블은 "
                                     "20261003120000_create_autoresponders.sql 파일을 "
                                     "적용한 다음 20261003130000_add_autoresponder_embeds.sql "
+                                    "및 20261007065250_add_autoresponder_rewards.sql "
                                     "파일도 적용해 주세요."
                                     if responder_tables_missing
                                     else ""
@@ -342,6 +353,12 @@ class EconomyStore:
                                  AND table_name = 'autoresponders'
                                  AND column_name IN ('response_type', 'embed_title', 'embed_color')
                            ) AS autoresponder_embeds,
+                           EXISTS (
+                               SELECT 1 FROM information_schema.columns
+                               WHERE table_schema = 'public'
+                                 AND table_name = 'autoresponders'
+                                 AND column_name = 'reward_spec'
+                           ) AS autoresponder_rewards,
                            to_regclass('public.voice_activity') AS voice_activity,
                            EXISTS (
                                SELECT 1 FROM information_schema.columns
@@ -375,6 +392,12 @@ class EconomyStore:
                     raise RuntimeError(
                         "Supabase 자동 응답 임베드 컬럼이 없습니다. "
                         "supabase/migrations/20261003130000_add_autoresponder_embeds.sql "
+                        "파일을 Supabase SQL Editor에서 적용해 주세요."
+                    )
+                if not row["autoresponder_rewards"]:
+                    raise RuntimeError(
+                        "Supabase 자동 응답 월령 지급 컬럼이 없습니다. "
+                        "supabase/migrations/20261007065250_add_autoresponder_rewards.sql "
                         "파일을 Supabase SQL Editor에서 적용해 주세요."
                     )
                 if voice_rewards_enabled and row["voice_activity"] is None:
@@ -1068,6 +1091,7 @@ class EconomyStore:
             embed_color=(
                 None if row["embed_color"] is None else int(row["embed_color"])
             ),
+            reward_spec=str(row["reward_spec"]),
         )
 
     def add_autoresponder(
@@ -1080,7 +1104,9 @@ class EconomyStore:
         response_type: str = "text",
         embed_title: str | None = None,
         embed_color: int | None = None,
+        reward_spec: str = "0",
     ) -> bool:
+        reward_spec = str(parse_reward_spec(reward_spec))
         trigger_key = trigger.casefold()
         if match_mode not in AUTORESPONDER_MATCH_MODES:
             raise ValueError("invalid autoresponder match mode")
@@ -1104,8 +1130,8 @@ class EconomyStore:
             result = connection.execute(
                 """INSERT OR IGNORE INTO autoresponders
                    (guild_id, trigger_text, trigger_key, response, match_mode,
-                    response_type, embed_title, embed_color)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    response_type, embed_title, embed_color, reward_spec)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     guild_id,
                     trigger,
@@ -1115,6 +1141,7 @@ class EconomyStore:
                     response_type,
                     embed_title,
                     embed_color,
+                    reward_spec,
                 ),
             )
             return result.rowcount > 0
@@ -1130,7 +1157,7 @@ class EconomyStore:
             ).fetchone()
             rows = connection.execute(
                 """SELECT trigger_text, trigger_key, response, match_mode,
-                          response_type, embed_title, embed_color
+                          response_type, embed_title, embed_color, reward_spec
                    FROM autoresponders WHERE guild_id = ?
                    ORDER BY trigger_key LIMIT ? OFFSET ?""",
                 (guild_id, page_size, offset),
@@ -1141,22 +1168,26 @@ class EconomyStore:
         with self._connect(guild_id) as connection:
             rows = connection.execute(
                 """SELECT trigger_text, trigger_key, response, match_mode,
-                          response_type, embed_title, embed_color
+                          response_type, embed_title, embed_color, reward_spec
                    FROM autoresponders WHERE guild_id = ?""",
                 (guild_id,),
             ).fetchall()
             return [self._autoresponder_entry(row) for row in rows]
 
     def edit_autoresponder(
-        self, guild_id: int, trigger: str, response: str
+        self, guild_id: int, trigger: str, response: str,
+        *, reward_spec: str | None = None,
     ) -> bool:
+        if reward_spec is not None:
+            reward_spec = str(parse_reward_spec(reward_spec))
         with self._connect(guild_id) as connection:
             result = connection.execute(
                 """UPDATE autoresponders
                    SET response = ?, response_type = 'text',
-                       embed_title = NULL, embed_color = NULL
+                       embed_title = NULL, embed_color = NULL,
+                       reward_spec = COALESCE(?, reward_spec)
                    WHERE guild_id = ? AND trigger_key = ?""",
-                (response, guild_id, trigger.casefold()),
+                (response, reward_spec, guild_id, trigger.casefold()),
             )
             return result.rowcount > 0
 
@@ -1167,14 +1198,19 @@ class EconomyStore:
         title: str,
         description: str,
         color: int,
+        *,
+        reward_spec: str | None = None,
     ) -> bool:
+        if reward_spec is not None:
+            reward_spec = str(parse_reward_spec(reward_spec))
         with self._connect(guild_id) as connection:
             result = connection.execute(
                 """UPDATE autoresponders
                    SET response = ?, response_type = 'embed',
-                       embed_title = ?, embed_color = ?
+                       embed_title = ?, embed_color = ?,
+                       reward_spec = COALESCE(?, reward_spec)
                    WHERE guild_id = ? AND trigger_key = ?""",
-                (description, title, color, guild_id, trigger.casefold()),
+                (description, title, color, reward_spec, guild_id, trigger.casefold()),
             )
             return result.rowcount > 0
 

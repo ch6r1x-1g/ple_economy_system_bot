@@ -8,6 +8,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from autoresponder_rewards import parse_reward_spec
 from economy import (
     AUTORESPONDER_LIMIT,
     AutoResponderEntry,
@@ -55,10 +56,27 @@ class AutoResponder(commands.Cog):
 
     @autoresponder.command(name="추가", description="자동 응답을 추가합니다. (관리자)")
     @administrator_only()
-    @app_commands.describe(trigger="응답을 시작할 단어나 문장", response="보낼 응답 (최대 2,000자)")
-    @app_commands.rename(trigger="트리거", response="응답")
+    @app_commands.describe(
+        trigger="응답을 시작할 단어나 문장",
+        response="보낼 응답 또는 임베드 본문 (최대 2,000자)",
+        embed="임베드로 보낼지 여부 (기본: 아니요)",
+        title="임베드 사용 시 제목 (선택, 최대 256자)",
+        color="임베드 사용 시 색상 HEX 코드 (기본: #5865F2)",
+        reward="매번 지급할 월령: 100 / 10~100 / 10,50,100 (기본: 0, 지급 안 함)",
+    )
+    @app_commands.rename(
+        trigger="트리거", response="응답", embed="임베드", title="제목", color="색상",
+        reward="월령",
+    )
     async def add(
-        self, interaction: discord.Interaction, trigger: str, response: str
+        self,
+        interaction: discord.Interaction,
+        trigger: str,
+        response: str,
+        embed: bool = False,
+        title: str = "",
+        color: str = "#5865F2",
+        reward: str = "0",
     ) -> None:
         trigger = trigger.strip()
         response = response.strip()
@@ -81,92 +99,18 @@ class AutoResponder(commands.Cog):
             )
             return
 
-        server_id = guild_id(interaction)
-        try:
-            created = await asyncio.to_thread(
-                self.store.add_autoresponder, server_id, trigger, response
-            )
-        except AutoResponderLimitReached:
-            await send_card(
-                interaction,
-                "자동 응답 한도에 도달했습니다",
-                f"서버에는 자동 응답을 최대 {AUTORESPONDER_LIMIT}개까지 등록할 수 있습니다.",
-                color=discord.Color.orange(),
-                ephemeral=True,
-            )
-            return
-        if not created:
-            await send_card(
-                interaction,
-                "이미 등록된 트리거입니다",
-                "트리거는 대소문자를 구분하지 않습니다. 기존 자동 응답을 수정하거나 삭제해 주세요.",
-                color=discord.Color.orange(),
-                ephemeral=True,
-            )
-            return
-
-        self._cache.pop(server_id, None)
-        await send_card(
-            interaction,
-            "자동 응답 추가 완료",
-            f"트리거 **{trigger}**에 대한 응답을 등록했습니다. 기본 방식은 완전 일치입니다.",
-            color=discord.Color.green(),
-            ephemeral=True,
-        )
-
-    @autoresponder.command(
-        name="임베드추가", description="임베드 형식의 자동 응답을 추가합니다. (관리자)"
-    )
-    @administrator_only()
-    @app_commands.describe(
-        trigger="응답을 시작할 단어나 문장",
-        title="임베드 제목 (최대 256자)",
-        description="임베드 설명 (최대 2,000자)",
-        color="색상 HEX 코드 (예: #5865F2)",
-    )
-    @app_commands.rename(
-        trigger="트리거", title="제목", description="설명", color="색상"
-    )
-    async def add_embed(
-        self,
-        interaction: discord.Interaction,
-        trigger: str,
-        title: str,
-        description: str,
-        color: str = "#5865F2",
-    ) -> None:
-        trigger = trigger.strip()
-        title = title.strip()
-        description = description.strip()
-        color_value = parse_embed_color(color)
-        if not 1 <= len(trigger) <= 100:
-            await send_card(
-                interaction,
-                "트리거 길이를 확인해 주세요",
-                "트리거는 공백을 제외하고 1자부터 100자까지 입력할 수 있습니다.",
-                color=discord.Color.red(),
-                ephemeral=True,
-            )
-            return
-        if not 1 <= len(title) <= 256:
+        title = title.strip() if embed else ""
+        color_value = parse_embed_color(color) if embed else None
+        if len(title) > 256:
             await send_card(
                 interaction,
                 "임베드 제목 길이를 확인해 주세요",
-                "임베드 제목은 1자부터 256자까지 입력할 수 있습니다.",
+                "임베드 제목은 최대 256자까지 입력할 수 있습니다.",
                 color=discord.Color.red(),
                 ephemeral=True,
             )
             return
-        if not 1 <= len(description) <= 2000:
-            await send_card(
-                interaction,
-                "임베드 설명 길이를 확인해 주세요",
-                "임베드 설명은 1자부터 2,000자까지 입력할 수 있습니다.",
-                color=discord.Color.red(),
-                ephemeral=True,
-            )
-            return
-        if color_value is None:
+        if embed and color_value is None:
             await send_card(
                 interaction,
                 "색상 코드를 확인해 주세요",
@@ -176,16 +120,21 @@ class AutoResponder(commands.Cog):
             )
             return
 
+        reward_spec = await self._validate_reward(interaction, reward)
+        if reward_spec is None:
+            return
+
         server_id = guild_id(interaction)
         try:
             created = await asyncio.to_thread(
                 self.store.add_autoresponder,
                 server_id,
                 trigger,
-                description,
-                response_type="embed",
-                embed_title=title,
+                response,
+                response_type="embed" if embed else "text",
+                embed_title=title or None,
                 embed_color=color_value,
+                reward_spec=reward_spec,
             )
         except AutoResponderLimitReached:
             await send_card(
@@ -209,8 +158,9 @@ class AutoResponder(commands.Cog):
         self._cache.pop(server_id, None)
         await send_card(
             interaction,
-            "임베드 자동 응답 추가 완료",
-            f"트리거 **{trigger}**에 임베드 응답을 등록했습니다.",
+            "임베드 자동 응답 추가 완료" if embed else "자동 응답 추가 완료",
+            f"트리거 **{trigger}**에 {'임베드' if embed else '텍스트'} 응답을 등록했습니다. 기본 방식은 완전 일치입니다.\n"
+            f"월령 지급: `{reward_spec}` (0은 지급 안 함). 지급량은 `{{reward}}`로 표시할 수 있습니다.",
             color=discord.Color.green(),
             ephemeral=True,
         )
@@ -250,7 +200,8 @@ class AutoResponder(commands.Cog):
         lines = [
             f"• `{entry.trigger.replace('`', 'ˋ')}` · "
             f"{'임베드' if entry.response_type == 'embed' else '텍스트'} · "
-            f"{MATCH_MODE_LABELS[entry.match_mode]}"
+            f"{MATCH_MODE_LABELS[entry.match_mode]} · "
+            f"월령 `{entry.reward_spec if len(entry.reward_spec) <= 40 else entry.reward_spec[:37] + '...'}`"
             for entry in entries
         ]
         await send_card(
@@ -263,10 +214,14 @@ class AutoResponder(commands.Cog):
 
     @autoresponder.command(name="수정", description="자동 응답 문구를 수정합니다. (관리자)")
     @administrator_only()
-    @app_commands.describe(trigger="수정할 트리거", response="새 응답 문구")
-    @app_commands.rename(trigger="트리거", response="응답")
+    @app_commands.describe(
+        trigger="수정할 트리거", response="새 응답 문구",
+        reward="지급 월령: 100 / 10~100 / 10,50,100 (생략: 기존 유지, 0: 지급 안 함)",
+    )
+    @app_commands.rename(trigger="트리거", response="응답", reward="월령")
     async def edit(
-        self, interaction: discord.Interaction, trigger: str, response: str
+        self, interaction: discord.Interaction, trigger: str, response: str,
+        reward: str | None = None,
     ) -> None:
         response = response.strip()
         if not 1 <= len(response) <= 2000:
@@ -278,9 +233,15 @@ class AutoResponder(commands.Cog):
                 ephemeral=True,
             )
             return
+        reward_spec = None
+        if reward is not None:
+            reward_spec = await self._validate_reward(interaction, reward)
+            if reward_spec is None:
+                return
         server_id = guild_id(interaction)
         updated = await asyncio.to_thread(
-            self.store.edit_autoresponder, server_id, trigger.strip(), response
+            self.store.edit_autoresponder, server_id, trigger.strip(), response,
+            reward_spec=reward_spec,
         )
         if not updated:
             await self._not_found(interaction)
@@ -289,7 +250,9 @@ class AutoResponder(commands.Cog):
         await send_card(
             interaction,
             "자동 응답 수정 완료",
-            f"트리거 **{trigger.strip()}**를 텍스트 응답으로 변경했습니다.",
+            f"트리거 **{trigger.strip()}**를 텍스트 응답으로 변경했습니다.\n"
+            + (f"월령 지급: `{reward_spec}` (0은 지급 안 함)." if reward_spec is not None
+               else "기존 월령 지급 설정을 유지했습니다."),
             color=discord.Color.green(),
             ephemeral=True,
         )
@@ -303,9 +266,10 @@ class AutoResponder(commands.Cog):
         title="임베드 제목 (최대 256자)",
         description="임베드 설명 (최대 2,000자)",
         color="색상 HEX 코드 (예: #5865F2)",
+        reward="지급 월령: 100 / 10~100 / 10,50,100 (생략: 기존 유지, 0: 지급 안 함)",
     )
     @app_commands.rename(
-        trigger="트리거", title="제목", description="설명", color="색상"
+        trigger="트리거", title="제목", description="설명", color="색상", reward="월령"
     )
     async def edit_embed(
         self,
@@ -314,6 +278,7 @@ class AutoResponder(commands.Cog):
         title: str,
         description: str,
         color: str = "#5865F2",
+        reward: str | None = None,
     ) -> None:
         title = title.strip()
         description = description.strip()
@@ -346,6 +311,11 @@ class AutoResponder(commands.Cog):
             )
             return
 
+        reward_spec = None
+        if reward is not None:
+            reward_spec = await self._validate_reward(interaction, reward)
+            if reward_spec is None:
+                return
         server_id = guild_id(interaction)
         updated = await asyncio.to_thread(
             self.store.edit_autoresponder_embed,
@@ -354,6 +324,7 @@ class AutoResponder(commands.Cog):
             title,
             description,
             color_value,
+            reward_spec=reward_spec,
         )
         if not updated:
             await self._not_found(interaction)
@@ -362,10 +333,28 @@ class AutoResponder(commands.Cog):
         await send_card(
             interaction,
             "임베드 자동 응답 수정 완료",
-            f"트리거 **{trigger.strip()}**의 임베드 응답을 변경했습니다.",
+            f"트리거 **{trigger.strip()}**의 임베드 응답을 변경했습니다.\n"
+            + (f"월령 지급: `{reward_spec}` (0은 지급 안 함)." if reward_spec is not None
+               else "기존 월령 지급 설정을 유지했습니다."),
             color=discord.Color.green(),
             ephemeral=True,
         )
+
+    @staticmethod
+    async def _validate_reward(
+        interaction: discord.Interaction, value: str
+    ) -> str | None:
+        try:
+            return str(parse_reward_spec(value))
+        except ValueError as error:
+            await send_card(
+                interaction,
+                "월령 지급 설정을 확인해 주세요",
+                str(error),
+                color=discord.Color.red(),
+                ephemeral=True,
+            )
+            return None
 
     @autoresponder.command(name="방식", description="트리거 일치 방식을 설정합니다. (관리자)")
     @administrator_only()
@@ -418,6 +407,28 @@ class AutoResponder(commands.Cog):
             ephemeral=True,
         )
 
+    @edit.autocomplete("trigger")
+    @edit_embed.autocomplete("trigger")
+    @remove.autocomplete("trigger")
+    async def trigger_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        server_id = interaction.guild_id
+        if server_id is None or not interaction.permissions.administrator:
+            return []
+        if self.store.guild_ids and server_id not in self.store.guild_ids:
+            return []
+        entries = await self._load_cache(server_id)
+        query = current.strip().casefold()
+        matches = sorted(
+            (entry for entry in entries if query in entry.trigger_key),
+            key=lambda entry: (not entry.trigger_key.startswith(query), entry.trigger_key),
+        )
+        return [
+            app_commands.Choice(name=entry.trigger, value=entry.trigger)
+            for entry in matches[:25]
+        ]
+
     @staticmethod
     async def _not_found(interaction: discord.Interaction) -> None:
         await send_card(
@@ -464,6 +475,20 @@ class AutoResponder(commands.Cog):
             matches,
             key=lambda value: (mode_priority[value.match_mode], -len(value.trigger_key)),
         )
+        try:
+            reward = parse_reward_spec(entry.reward_spec).roll()
+            if reward:
+                await asyncio.to_thread(
+                    self.store.adjust, message.guild.id, message.author.id, reward
+                )
+        except Exception:
+            log.exception(
+                "Could not grant autoresponder reward in guild %s to user %s",
+                message.guild.id,
+                message.author.id,
+            )
+            return
+
         channel_name = getattr(message.channel, "name", "")
         replacements = {
             "{user}": message.author.mention,
@@ -477,6 +502,7 @@ class AutoResponder(commands.Cog):
             "{message_content}": message.content,
             "{message_link}": message.jump_url,
             "{newline}": "\n",
+            "{reward}": str(reward),
         }
 
         def expand(template: str) -> str:
