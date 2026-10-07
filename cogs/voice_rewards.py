@@ -72,6 +72,37 @@ class VoiceRewards(commands.Cog):
         before: discord.VoiceState,
         after: discord.VoiceState,
     ) -> None:
+        await self._update_member_session(
+            member,
+            eligible=self._is_reward_channel(after.channel),
+            fresh_join=not self._is_reward_channel(before.channel),
+        )
+
+    @staticmethod
+    def _is_reward_channel(
+        channel: discord.VoiceChannel | discord.StageChannel | None,
+    ) -> bool:
+        return channel is not None and not 1 <= channel.user_limit <= 10
+
+    @commands.Cog.listener()
+    async def on_guild_channel_update(
+        self,
+        before: discord.abc.GuildChannel,
+        after: discord.abc.GuildChannel,
+    ) -> None:
+        if not isinstance(after, (discord.VoiceChannel, discord.StageChannel)):
+            return
+        eligible = self._is_reward_channel(after)
+        if self._is_reward_channel(before) == eligible:
+            return
+        for member in after.members:
+            await self._update_member_session(
+                member, eligible=eligible, fresh_join=eligible
+            )
+
+    async def _update_member_session(
+        self, member: discord.Member, *, eligible: bool, fresh_join: bool
+    ) -> None:
         if member.bot:
             return
 
@@ -82,11 +113,11 @@ class VoiceRewards(commands.Cog):
             if session is not None:
                 self._queue_elapsed(key, session, now)
 
-            if after.channel is None:
+            if not eligible:
                 self._end_session(key)
                 self._sessions.pop(key, None)
             elif session is None:
-                if before.channel is None:
+                if fresh_join:
                     # A fresh join must not inherit a saved, older session.
                     self._end_session(key)
                 self._sessions[key] = _VoiceSession(now)
@@ -103,7 +134,7 @@ class VoiceRewards(commands.Cog):
             channels = (*guild.voice_channels, *guild.stage_channels)
             for channel in channels:
                 for user_id, voice_state in channel.voice_states.items():
-                    if voice_state.channel is not None:
+                    if self._is_reward_channel(voice_state.channel):
                         connected[(guild.id, user_id)] = voice_state
 
         sessions: dict[tuple[int, int], _VoiceSession] = {}
