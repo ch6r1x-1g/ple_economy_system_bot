@@ -409,6 +409,7 @@ class AutoResponder(commands.Cog):
 
     @edit.autocomplete("trigger")
     @edit_embed.autocomplete("trigger")
+    @set_mode.autocomplete("trigger")
     @remove.autocomplete("trigger")
     async def trigger_autocomplete(
         self, interaction: discord.Interaction, current: str
