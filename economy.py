@@ -146,9 +146,11 @@ class EconomyStore:
         database_path: str,
         database_url: str | None = None,
         guild_ids: tuple[int, ...] = (),
+        database_sslmode: str = "require",
     ) -> None:
         self.database_path = Path(database_path)
         self.database_url = database_url
+        self.database_sslmode = database_sslmode
         self.is_postgres = bool(database_url)
         self.guild_ids = tuple(guild_ids)
 
@@ -170,7 +172,7 @@ class EconomyStore:
                 self.database_url,
                 connect_timeout=10,
                 row_factory=dict_row,
-                sslmode="require",
+                sslmode=self.database_sslmode,
             )
             return _StoreConnection(
                 connection, guild_id=table_guild_id, is_postgres=True

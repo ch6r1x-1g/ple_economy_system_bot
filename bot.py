@@ -50,7 +50,10 @@ class PointsBot(commands.Bot):
         )
         self.settings = settings
         self.store = EconomyStore(
-            settings.database_path, settings.database_url, settings.guild_ids
+            settings.database_path,
+            settings.database_url,
+            settings.guild_ids,
+            database_sslmode=settings.database_sslmode,
         )
 
     async def setup_hook(self) -> None:

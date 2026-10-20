@@ -114,5 +114,6 @@ Discord Developer Portal에서 봇을 만든 뒤 초대할 때 `bot`과 `applica
 | `BIRTHDAY_CHANNEL_ID` | `1353290632310951949` | 생일 축하 임베드를 올릴 채널 ID |
 | `TIMEZONE` | `Asia/Seoul` | 일일 보상 기준 시간대 |
 | `DATABASE_PATH` | `data/economy.sqlite3` | SQLite 파일 경로 |
-| `DATABASE_URL` | 비어 있음 | 설정하면 사용하는 Supabase PostgreSQL 연결 문자열 |
+| `DATABASE_URL` | 비어 있음 | 설정하면 사용하는 PostgreSQL 연결 문자열 |
+| `DATABASE_SSLMODE` | `require` | `DATABASE_URL` 연결의 SSL 모드. SSL을 지원하지 않는 내부 PostgreSQL에서는 `disable` |
 | `SUPABASE_ADMIN_DATABASE_URL` | 비어 있음 | 최초 데이터 이전에만 사용하는 관리자 연결 문자열 |

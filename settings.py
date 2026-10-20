@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dotenv import load_dotenv
 
 MAX_POINTS = 1_000_000_000
+DATABASE_SSLMODES = {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class Settings:
     sync_guild_id: int | None
     database_path: str
     database_url: str | None
+    database_sslmode: str
     guild_ids: tuple[int, ...]
 
 
@@ -86,6 +88,12 @@ def load_settings() -> Settings:
             "GUILD_IDS는 중복 없이 쉼표로 구분한 양수 Discord 서버 ID여야 합니다."
         ) from error
 
+    database_sslmode = os.getenv("DATABASE_SSLMODE", "require").strip()
+    if database_sslmode not in DATABASE_SSLMODES:
+        raise RuntimeError(
+            "DATABASE_SSLMODE는 disable, allow, prefer, require, verify-ca, verify-full 중 하나여야 합니다."
+        )
+
     return Settings(
         daily_reward=daily_reward,
         voice_reward=voice_reward,
@@ -95,5 +103,6 @@ def load_settings() -> Settings:
         sync_guild_id=sync_guild_id,
         database_path=os.getenv("DATABASE_PATH", "data/economy.sqlite3"),
         database_url=os.getenv("DATABASE_URL", "").strip() or None,
+        database_sslmode=database_sslmode,
         guild_ids=guild_ids,
     )
