@@ -10,3 +10,8 @@ CREATE TABLE IF NOT EXISTS birthdays (
 
 -- The bot connects as ple_bot_app; grant the same table access as the other tables.
 GRANT SELECT, INSERT, UPDATE, DELETE ON birthdays TO ple_bot_app;
+
+-- Row-level security is on for the bot tables, so the bot role needs a policy as well.
+ALTER TABLE birthdays ENABLE ROW LEVEL SECURITY;
+CREATE POLICY birthdays_ple_bot_app_all ON birthdays
+    FOR ALL TO ple_bot_app USING (true) WITH CHECK (true);
