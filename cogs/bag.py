@@ -15,7 +15,7 @@ class Bag(commands.Cog):
     def __init__(self, store: EconomyStore) -> None:
         self.store = store
 
-    @app_commands.command(name="가방", description="내 월령 잔액과 보유 상품을 확인합니다.")
+    @app_commands.command(name="지갑", description="내 월령 잔액과 보유 상품을 확인합니다.")
     @app_commands.guild_only()
     async def bag(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True, thinking=True)
@@ -36,7 +36,7 @@ class Bag(commands.Cog):
 
         await send_card(
             interaction,
-            "내 가방",
+            "내 지갑",
             f"월령 잔액: **{balance:,} 월령**\n\n"
             f"**보유 상품**\n{inventory_text}",
             color=discord.Color.gold(),

@@ -50,7 +50,7 @@ class Sell(commands.Cog):
             await send_card(
                 interaction,
                 "인벤토리에 상품이 없습니다",
-                "`/가방`에서 판매할 상품 이름을 확인해 주세요.",
+                "`/지갑`에서 판매할 상품 이름을 확인해 주세요.",
                 color=discord.Color.red(),
                 ephemeral=True,
             )
