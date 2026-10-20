@@ -6,7 +6,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from economy import EconomyStore, InsufficientInventory, ItemNotInInventory
+from economy import (
+    EconomyStore,
+    InsufficientInventory,
+    ItemNotInInventory,
+    ItemNotSellable,
+)
 from presentation import guild_id, send_card
 from shop_names import display_shop_name, normalize_shop_name
 
@@ -51,6 +56,15 @@ class Sell(commands.Cog):
                 interaction,
                 "인벤토리에 상품이 없습니다",
                 "`/지갑`에서 판매할 상품 이름을 확인해 주세요.",
+                color=discord.Color.red(),
+                ephemeral=True,
+            )
+            return
+        except ItemNotSellable:
+            await send_card(
+                interaction,
+                "판매할 수 없는 상품입니다",
+                "이 상품은 상점에서 판매 불가로 등록되어 되팔 수 없습니다.",
                 color=discord.Color.red(),
                 ephemeral=True,
             )

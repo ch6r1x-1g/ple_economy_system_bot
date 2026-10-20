@@ -28,6 +28,7 @@ class ProductEdit(commands.Cog):
         unlimited_stock="재고를 무제한으로 변경",
         role="구매 시 지급할 역할 변경",
         remove_role="상품의 역할 연결 해제",
+        sellable="판매 가능 여부 변경",
     )
     @app_commands.rename(
         name="상품",
@@ -38,6 +39,7 @@ class ProductEdit(commands.Cog):
         unlimited_stock="무제한재고",
         role="역할",
         remove_role="역할해제",
+        sellable="판매가능",
     )
     async def product_edit(
         self,
@@ -50,6 +52,7 @@ class ProductEdit(commands.Cog):
         role: discord.Role | None = None,
         remove_role: bool = False,
         new_name: str | None = None,
+        sellable: bool | None = None,
     ) -> None:
         name = normalize_shop_name(name)
         new_name = None if new_name is None else normalize_shop_name(new_name)
@@ -79,12 +82,13 @@ class ProductEdit(commands.Cog):
                 (stock, unlimited_stock),
                 (role, remove_role),
                 (new_name, False),
+                (sellable, False),
             )
         ):
             await send_card(
                 interaction,
                 "변경할 내용이 없습니다",
-                "새 이름, 가격, 설명, 재고, 역할 중 수정할 항목을 입력해 주세요.",
+                "새 이름, 가격, 설명, 재고, 역할, 판매 가능 여부 중 수정할 항목을 입력해 주세요.",
                 color=discord.Color.orange(),
                 ephemeral=True,
             )
@@ -159,6 +163,7 @@ class ProductEdit(commands.Cog):
                 unlimited_stock=unlimited_stock,
                 role_id=role.id if role is not None else None,
                 remove_role=remove_role,
+                sellable=sellable,
             )
         except ShopItemNameTaken:
             await send_card(
@@ -186,7 +191,7 @@ class ProductEdit(commands.Cog):
             interaction,
             "상품 수정 완료",
             f"**{display_shop_name(updated.name)}**\n가격: **{updated.price:,} 월령** · 재고: **{stock_text}**\n"
-            f"역할: {role_text}\n설명: {description_text}\n"
+            f"역할: {role_text}\n판매: {'가능' if updated.sellable else '불가'}\n설명: {description_text}\n"
             "역할 변경은 이후 구매부터 적용됩니다.",
             color=discord.Color.green(),
             ephemeral=True,

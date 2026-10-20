@@ -86,6 +86,10 @@ class ItemNotInInventory(Exception):
     pass
 
 
+class ItemNotSellable(Exception):
+    pass
+
+
 class InsufficientInventory(Exception):
     def __init__(self, available: int) -> None:
         self.available = available
@@ -113,6 +117,7 @@ class ShopItem:
     price: int
     stock: int | None
     role_id: int | None
+    sellable: bool = True
 
 
 @dataclass(frozen=True)
@@ -279,6 +284,19 @@ class EconomyStore:
         )
 
     @staticmethod
+    def _ensure_shop_items_sellable_column(connection: Any, table_name: str) -> None:
+        columns = {
+            str(row["name"])
+            for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+        }
+        if "sellable" not in columns:
+            connection.execute(
+                f"""ALTER TABLE {table_name}
+                    ADD COLUMN sellable INTEGER NOT NULL DEFAULT 1
+                    CHECK (sellable IN (0, 1))"""
+            )
+
+    @staticmethod
     def _ensure_shared_account(connection: Any, guild_id: int) -> None:
         connection.execute(
             """INSERT OR IGNORE INTO shared_accounts (guild_id, balance)
@@ -315,6 +333,12 @@ class EconomyStore:
                                 f"'autoresponders_{guild_id}' AND column_name = "
                                 f"'{responder_column}') AS responder_{responder_column}"
                             )
+                        status_columns.append(
+                            "EXISTS (SELECT 1 FROM information_schema.columns "
+                            "WHERE table_schema = 'public' AND table_name = "
+                            f"'shop_items_{guild_id}' AND column_name = "
+                            "'sellable') AS shop_sellable"
+                        )
                         found = connection.execute(
                             "SELECT " + ", ".join(status_columns)
                         ).fetchone()
@@ -332,6 +356,8 @@ class EconomyStore:
                                 missing.append(
                                     f"autoresponders_{guild_id}.{responder_column}"
                                 )
+                        if not found["shop_sellable"]:
+                            missing.append(f"shop_items_{guild_id}.sellable")
                         if missing:
                             responder_tables_missing = any(
                                 name.startswith("autoresponders_") for name in missing
@@ -362,6 +388,12 @@ class EconomyStore:
                            to_regclass('public.shared_accounts') AS shared_accounts,
                            to_regclass('public.autoresponders') AS autoresponders,
                            to_regclass('public.birthdays') AS birthdays,
+                           EXISTS (
+                               SELECT 1 FROM information_schema.columns
+                               WHERE table_schema = 'public'
+                                 AND table_name = 'shop_items'
+                                 AND column_name = 'sellable'
+                           ) AS shop_item_sellable,
                            (
                                SELECT COUNT(*) = 3 FROM information_schema.columns
                                WHERE table_schema = 'public'
@@ -396,6 +428,12 @@ class EconomyStore:
                         "Supabase 공동 계좌 테이블이 없습니다. "
                         "supabase/migrations의 create_shared_accounts SQL을 "
                         "Supabase SQL Editor에서 적용해 주세요."
+                    )
+                if not row["shop_item_sellable"]:
+                    raise RuntimeError(
+                        "Supabase 상점 판매 가능 컬럼이 없습니다. "
+                        "supabase/migrations/20261020130000_add_shop_item_sellable.sql "
+                        "파일을 Supabase SQL Editor에서 적용해 주세요."
                     )
                 if row["birthdays"] is None:
                     raise RuntimeError(
@@ -457,6 +495,9 @@ class EconomyStore:
                             role_id INTEGER,
                             PRIMARY KEY (guild_id, item_name)
                         )"""
+                    )
+                    self._ensure_shop_items_sellable_column(
+                        connection, f"shop_items_{guild_id}"
                     )
                     connection.execute(
                         f"""CREATE TABLE IF NOT EXISTS inventory_{guild_id} (
@@ -521,6 +562,7 @@ class EconomyStore:
             }
             if "role_id" not in columns:
                 connection.execute("ALTER TABLE shop_items ADD COLUMN role_id INTEGER")
+            self._ensure_shop_items_sellable_column(connection, "shop_items")
             connection.execute(
                 """CREATE TABLE IF NOT EXISTS inventory (
                     guild_id INTEGER NOT NULL,
@@ -776,7 +818,7 @@ class EconomyStore:
     def list_shop_items(self, guild_id: int, limit: int = 20) -> list[ShopItem]:
         with self._connect(guild_id) as connection:
             rows = connection.execute(
-                """SELECT item_name, description, price, stock, role_id FROM shop_items
+                """SELECT item_name, description, price, stock, role_id, sellable FROM shop_items
                    WHERE guild_id = ? ORDER BY item_name COLLATE NOCASE LIMIT ?""",
                 (guild_id, limit),
             ).fetchall()
@@ -787,6 +829,7 @@ class EconomyStore:
                     price=int(row["price"]),
                     stock=None if row["stock"] is None else int(row["stock"]),
                     role_id=None if row["role_id"] is None else int(row["role_id"]),
+                    sellable=bool(int(row["sellable"])),
                 )
                 for row in rows
             ]
@@ -799,6 +842,7 @@ class EconomyStore:
         price: int,
         stock: int | None,
         role_id: int | None,
+        sellable: bool = True,
     ) -> bool:
         with self._connect(guild_id) as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -820,9 +864,9 @@ class EconomyStore:
                 raise ShopLimitReached
             cursor = connection.execute(
                 """INSERT INTO shop_items
-                   (guild_id, item_name, description, price, stock, role_id)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (guild_id, name, description, price, stock, role_id),
+                   (guild_id, item_name, description, price, stock, role_id, sellable)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (guild_id, name, description, price, stock, role_id, int(sellable)),
             )
             return cursor.rowcount == 1
 
@@ -846,11 +890,12 @@ class EconomyStore:
         unlimited_stock: bool = False,
         role_id: int | None = None,
         remove_role: bool = False,
+        sellable: bool | None = None,
     ) -> ShopItem | None:
         with self._connect(guild_id) as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                """SELECT item_name, description, price, stock, role_id
+                """SELECT item_name, description, price, stock, role_id, sellable
                    FROM shop_items WHERE guild_id = ? AND item_name = ?"""
                 + self._for_update(),
                 (guild_id, name),
@@ -925,9 +970,14 @@ class EconomyStore:
                 else current_role_id if role_id is None else role_id
             )
 
+            updated_sellable = (
+                bool(int(row["sellable"])) if sellable is None else sellable
+            )
+
             connection.execute(
                 """UPDATE shop_items
-                   SET item_name = ?, description = ?, price = ?, stock = ?, role_id = ?
+                   SET item_name = ?, description = ?, price = ?, stock = ?, role_id = ?,
+                       sellable = ?
                    WHERE guild_id = ? AND item_name = ?""",
                 (
                     updated_name,
@@ -935,6 +985,7 @@ class EconomyStore:
                     updated_price,
                     updated_stock,
                     updated_role_id,
+                    int(updated_sellable),
                     guild_id,
                     current_name,
                 ),
@@ -945,6 +996,7 @@ class EconomyStore:
                 price=updated_price,
                 stock=updated_stock,
                 role_id=updated_role_id,
+                sellable=updated_sellable,
             )
 
     def purchase(
@@ -1005,7 +1057,7 @@ class EconomyStore:
         with self._connect(guild_id) as connection:
             connection.execute("BEGIN IMMEDIATE")
             shop_item = connection.execute(
-                """SELECT item_name, role_id FROM shop_items
+                """SELECT item_name, role_id, sellable FROM shop_items
                    WHERE guild_id = ? AND item_name = ?"""
                 + self._for_update(),
                 (guild_id, item_name),
@@ -1018,6 +1070,8 @@ class EconomyStore:
             ).fetchone()
             if item is None:
                 raise ItemNotInInventory
+            if shop_item is not None and not int(shop_item["sellable"]):
+                raise ItemNotSellable
 
             owned = int(item["quantity"])
             if owned < quantity:

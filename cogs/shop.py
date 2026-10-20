@@ -33,9 +33,10 @@ class Shop(commands.Cog):
             stock = "무제한" if item.stock is None else f"{item.stock:,}개"
             details = item.description or "설명 없음"
             role = f"\n구매 시 역할: <@&{item.role_id}>" if item.role_id is not None else ""
+            sell_tag = "" if item.sellable else " · 판매 불가"
             lines.append(
                 f"**{display_shop_name(item.name)}** · **{item.price:,} 월령** · "
-                f"재고 {stock}{role}\n{details}"
+                f"재고 {stock}{sell_tag}{role}\n{details}"
             )
         await send_card(
             interaction,

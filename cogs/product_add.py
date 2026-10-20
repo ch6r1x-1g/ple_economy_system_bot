@@ -25,9 +25,15 @@ class ProductAdd(commands.Cog):
         description="상품 설명 (선택)",
         stock="재고 수량 (비우면 무제한)",
         role="구매 시 지급할 역할 (선택)",
+        sellable="판매 가능 여부 (기본: 가능)",
     )
     @app_commands.rename(
-        name="상품", price="가격", description="설명", stock="재고", role="역할"
+        name="상품",
+        price="가격",
+        description="설명",
+        stock="재고",
+        role="역할",
+        sellable="판매가능",
     )
     async def product_add(
         self,
@@ -37,6 +43,7 @@ class ProductAdd(commands.Cog):
         description: str | None = None,
         stock: app_commands.Range[int, 0, 1_000_000] | None = None,
         role: discord.Role | None = None,
+        sellable: bool = True,
     ) -> None:
         name = normalize_shop_name(name)
         if not name or len(name) > 50:
@@ -97,6 +104,7 @@ class ProductAdd(commands.Cog):
                 price,
                 stock,
                 role.id if role is not None else None,
+                sellable=sellable,
             )
         except ShopLimitReached:
             await send_card(
@@ -119,10 +127,11 @@ class ProductAdd(commands.Cog):
 
         stock_text = "무제한" if stock is None else f"{stock:,}개"
         role_text = f" · 구매 시 역할: {role.mention}" if role is not None else ""
+        sell_text = "가능" if sellable else "불가"
         await send_card(
             interaction,
             "상품 등록 완료",
-            f"**{display_shop_name(name)}** 상품을 등록했습니다.\n가격: **{price:,} 월령** · 재고: **{stock_text}**{role_text}",
+            f"**{display_shop_name(name)}** 상품을 등록했습니다.\n가격: **{price:,} 월령** · 재고: **{stock_text}** · 판매: **{sell_text}**{role_text}",
             color=discord.Color.green(),
             ephemeral=True,
         )
