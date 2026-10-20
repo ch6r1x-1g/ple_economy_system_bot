@@ -23,6 +23,7 @@ VOICE_REWARDS_ENABLED = True
 EXTENSIONS = (
     "cogs.bag",
     "cogs.daily",
+    "cogs.birthday",
     "cogs.pay",
     "cogs.shared_account",
     "cogs.grant",

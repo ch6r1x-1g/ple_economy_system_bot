@@ -13,6 +13,8 @@ MAX_POINTS = 1_000_000_000
 class Settings:
     daily_reward: int
     voice_reward: int
+    birthday_reward: int
+    birthday_channel_id: int
     timezone: ZoneInfo
     sync_guild_id: int | None
     database_path: str
@@ -40,6 +42,22 @@ def load_settings() -> Settings:
         raise RuntimeError(
             f"VOICE_REWARD는 1부터 {MAX_POINTS:,} 사이의 정수여야 합니다."
         ) from error
+
+    try:
+        birthday_reward = int(os.getenv("BIRTHDAY_REWARD", "2000"))
+        if not 1 <= birthday_reward <= MAX_POINTS:
+            raise ValueError
+    except ValueError as error:
+        raise RuntimeError(
+            f"BIRTHDAY_REWARD는 1부터 {MAX_POINTS:,} 사이의 정수여야 합니다."
+        ) from error
+
+    try:
+        birthday_channel_id = int(os.getenv("BIRTHDAY_CHANNEL_ID", "1353290632310951949"))
+        if birthday_channel_id <= 0:
+            raise ValueError
+    except ValueError as error:
+        raise RuntimeError("BIRTHDAY_CHANNEL_ID는 숫자 채널 ID여야 합니다.") from error
 
     timezone_name = os.getenv("TIMEZONE", "Asia/Seoul")
     try:
@@ -71,6 +89,8 @@ def load_settings() -> Settings:
     return Settings(
         daily_reward=daily_reward,
         voice_reward=voice_reward,
+        birthday_reward=birthday_reward,
+        birthday_channel_id=birthday_channel_id,
         timezone=timezone,
         sync_guild_id=sync_guild_id,
         database_path=os.getenv("DATABASE_PATH", "data/economy.sqlite3"),

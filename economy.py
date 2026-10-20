@@ -21,6 +21,7 @@ class _StoreConnection:
         "shared_accounts",
         "voice_activity",
         "autoresponders",
+        "birthdays",
     )
 
     def __init__(
@@ -265,6 +266,19 @@ class EconomyStore:
             )
 
     @staticmethod
+    def _initialize_birthdays_table(connection: Any, table_name: str) -> None:
+        connection.execute(
+            f"""CREATE TABLE IF NOT EXISTS {table_name} (
+                guild_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                birth_month INTEGER NOT NULL CHECK (birth_month BETWEEN 1 AND 12),
+                birth_day INTEGER NOT NULL CHECK (birth_day BETWEEN 1 AND 31),
+                last_rewarded_year INTEGER,
+                PRIMARY KEY (guild_id, user_id)
+            )"""
+        )
+
+    @staticmethod
     def _ensure_shared_account(connection: Any, guild_id: int) -> None:
         connection.execute(
             """INSERT OR IGNORE INTO shared_accounts (guild_id, balance)
@@ -347,6 +361,7 @@ class EconomyStore:
                            to_regclass('public.inventory') AS inventory,
                            to_regclass('public.shared_accounts') AS shared_accounts,
                            to_regclass('public.autoresponders') AS autoresponders,
+                           to_regclass('public.birthdays') AS birthdays,
                            (
                                SELECT COUNT(*) = 3 FROM information_schema.columns
                                WHERE table_schema = 'public'
@@ -381,6 +396,12 @@ class EconomyStore:
                         "Supabase 공동 계좌 테이블이 없습니다. "
                         "supabase/migrations의 create_shared_accounts SQL을 "
                         "Supabase SQL Editor에서 적용해 주세요."
+                    )
+                if row["birthdays"] is None:
+                    raise RuntimeError(
+                        "Supabase 생일 테이블이 없습니다. "
+                        "supabase/migrations/20261020120000_create_birthdays.sql "
+                        "파일을 Supabase SQL Editor에서 적용해 주세요."
                     )
                 if row["autoresponders"] is None:
                     raise RuntimeError(
@@ -456,6 +477,9 @@ class EconomyStore:
                     self._initialize_autoresponders_table(
                         connection, f"autoresponders_{guild_id}"
                     )
+                    self._initialize_birthdays_table(
+                        connection, f"birthdays_{guild_id}"
+                    )
                     if voice_rewards_enabled:
                         self._initialize_voice_activity_table(
                             connection, f"voice_activity_{guild_id}"
@@ -478,6 +502,7 @@ class EconomyStore:
                 )"""
             )
             self._initialize_autoresponders_table(connection, "autoresponders")
+            self._initialize_birthdays_table(connection, "birthdays")
             if voice_rewards_enabled:
                 self._initialize_voice_activity_table(connection, "voice_activity")
             connection.execute(
@@ -1235,3 +1260,67 @@ class EconomyStore:
                 (guild_id, trigger.casefold()),
             )
             return result.rowcount > 0
+
+    def set_birthday(self, guild_id: int, user_id: int, month: int, day: int) -> None:
+        with self._connect(guild_id) as connection:
+            connection.execute(
+                """INSERT INTO birthdays (guild_id, user_id, birth_month, birth_day)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT (guild_id, user_id) DO UPDATE
+                   SET birth_month = excluded.birth_month,
+                       birth_day = excluded.birth_day""",
+                (guild_id, user_id, month, day),
+            )
+
+    def birthday(self, guild_id: int, user_id: int) -> tuple[int, int] | None:
+        with self._connect(guild_id) as connection:
+            row = connection.execute(
+                """SELECT birth_month, birth_day FROM birthdays
+                   WHERE guild_id = ? AND user_id = ?""",
+                (guild_id, user_id),
+            ).fetchone()
+            if row is None:
+                return None
+            return int(row["birth_month"]), int(row["birth_day"])
+
+    def remove_birthday(self, guild_id: int, user_id: int) -> bool:
+        with self._connect(guild_id) as connection:
+            result = connection.execute(
+                "DELETE FROM birthdays WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            )
+            return result.rowcount > 0
+
+    def unrewarded_birthday_user_ids(
+        self, guild_id: int, month: int, day: int, year: int
+    ) -> list[int]:
+        with self._connect(guild_id) as connection:
+            rows = connection.execute(
+                """SELECT user_id FROM birthdays
+                   WHERE guild_id = ? AND birth_month = ? AND birth_day = ?
+                     AND (last_rewarded_year IS NULL OR last_rewarded_year < ?)""",
+                (guild_id, month, day, year),
+            ).fetchall()
+            return [int(row["user_id"]) for row in rows]
+
+    def claim_birthday_reward(
+        self, guild_id: int, user_id: int, year: int, reward: int
+    ) -> bool:
+        """Pay the birthday reward once per year; return False if already paid."""
+        with self._connect(guild_id) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._ensure_account(connection, guild_id, user_id)
+            result = connection.execute(
+                """UPDATE birthdays SET last_rewarded_year = ?
+                   WHERE guild_id = ? AND user_id = ?
+                     AND (last_rewarded_year IS NULL OR last_rewarded_year < ?)""",
+                (year, guild_id, user_id, year),
+            )
+            if result.rowcount == 0:
+                return False
+            connection.execute(
+                """UPDATE accounts SET balance = balance + ?
+                   WHERE guild_id = ? AND user_id = ?""",
+                (reward, guild_id, user_id),
+            )
+            return True
